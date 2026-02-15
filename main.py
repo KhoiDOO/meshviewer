@@ -9,7 +9,10 @@ import math
 import tkinter as tk
 from tkinter import filedialog
 
-from mesh import load_mesh
+from mesh import (
+    load_mesh,
+    MeshInfo
+)
 
 # --- SHADER SOURCE ---
 VERTEX_SHADER = """
@@ -107,11 +110,13 @@ class MeshViewer:
         try:
             mesh = load_mesh(path)
             self.mesh = mesh
-            self.intersected_face_ids = range(100)
+            self.mesh_info = MeshInfo(mesh)
+            self.intersected_face_ids = self.mesh_info.intersected_face_ids
             
             self.update_gpu_buffers()
 
-            print(f"Loaded mesh: {path} with {len(mesh.vertices)} vertices.")
+            print(f"Loaded mesh: {path}")
+            print(self.mesh_info)
             
         except Exception as e:
             print(f"Failed to load mesh: {e}")
@@ -121,14 +126,14 @@ class MeshViewer:
 
         # Split faces into two groups
         all_indices = np.arange(len(self.mesh.faces))
-        high_mask = np.array([i in self.intersected_face_ids for i in all_indices])
+        intersected_mask = np.array([i in self.intersected_face_ids for i in all_indices])
         
         # 1. Prepare Main Mesh (Not highlighted)
-        main_faces = self.mesh.faces[~high_mask]
+        main_faces = self.mesh.faces[~intersected_mask]
         self.main_index_count = self.setup_buffer(self.main_vao, self.main_vbo, self.main_ebo, main_faces)
 
         # 2. Prepare Intersected Faces (Selected)
-        intersected_faces = self.mesh.faces[high_mask]
+        intersected_faces = self.mesh.faces[intersected_mask]
         self.intersected_index_count = self.setup_buffer(self.intersected_vao, self.intersected_vbo, self.intersected_ebo, intersected_faces)
 
     def setup_buffer(self, vao, vbo, ebo, faces):
