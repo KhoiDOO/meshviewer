@@ -1,5 +1,124 @@
 import trimesh
 import numpy as np
+import fcl
+
+
+class MeshInfo:
+    def __init__(self, mesh: trimesh.Trimesh):
+        self.mesh = mesh
+        self.intersected_face_ids = get_intersected_tria_ids(mesh)
+        self.non_watertight_components = mesh.split(only_watertight=False)
+        self.watertight_components = mesh.split(only_watertight=True)
+        self.genus = 1 - (len(mesh.vertices) - len(mesh.edges_unique) + len(mesh.faces)) / 2
+
+        self.edges_unique: np.ndarray
+        self.edges_counts: np.ndarray
+        self.edges_unique, self.edges_counts = np.unique(mesh.edges_sorted, axis=0, return_counts=True)
+        self.vertex_connectivity = np.bincount(self.edges_unique.flatten(), minlength=len(mesh.vertices))
+        self.edges_unique_length: np.ndarray
+        self.edges_unique_length = self.mesh.edges_unique_length
+
+        self.nondegenerate_faces_mask = mesh.nondegenerate_faces()
+        self.num_degenerate_faces = np.sum(~self.nondegenerate_faces_mask)
+        self.num_nondegenerate_faces = np.sum(self.nondegenerate_faces_mask)
+        
+        self.stats = {
+            "#vertices": len(mesh.vertices),
+            "#faces": len(mesh.faces),
+            "#edges": len(mesh.edges_unique),
+            "genus": self.genus,
+            "#components": mesh.body_count,
+            "#components[split][watertight]": len(self.watertight_components),
+            "#components[split][non_watertight]": len(self.non_watertight_components),
+        }
+
+        self.properties = {
+            "is_watertight": mesh.is_watertight,
+            "is_empty": mesh.is_empty,
+            "is_winding_consistent": mesh.is_winding_consistent,
+            "is_convex": mesh.is_convex,
+            "is_manifold": is_manifold(mesh),
+            "mutable": mesh.mutable,
+            "is_intersecting": len(self.intersected_face_ids) > 0,
+        }
+
+        self.analysis = {
+            "area": mesh.area,
+            "volume": mesh.volume,
+            "bounds": mesh.bounds,
+            "center_mass": mesh.center_mass,
+            "centroid": mesh.centroid,
+            "extents": mesh.extents,
+        }
+
+        self.edges_info = {
+            "#internal_edges": np.sum(self.edges_counts == 2),
+            "#boundary_edges": np.sum(self.edges_counts == 1),
+            "min_connectivity": int(self.vertex_connectivity.min()),
+            "max_connectivity": int(self.vertex_connectivity.max()),
+            "avg_connectivity": float(self.vertex_connectivity.mean()),
+            "min_edge_length": float(self.edges_unique_length.min()),
+            "max_edge_length": float(self.edges_unique_length.max()),
+        }
+
+        self.faces_info = {
+            "#intersected_faces": len(self.intersected_face_ids),
+            "#degenerate_faces": self.num_degenerate_faces,
+            "#non_degenerate_faces": self.num_nondegenerate_faces,
+        }
+
+
+    
+    def __str__(self):
+        info_str = "Mesh Information:\n"
+        info_str += "Statistics:\n"
+        for key, value in self.stats.items():
+            info_str += f"\t{key}: {value}" if key in ["#vertices", "#faces", "#edges"] else f"\t{key}: {value}\n"
+        
+        info_str += "Properties:\n"
+        for key, value in self.properties.items():
+            info_str += f"\t{key}: {value}\n"
+        
+        info_str += "Analysis:\n"
+        for key, value in self.analysis.items():
+            if key == "bounds":
+                value_str = f"[[{value[0][0]:.3f}, {value[0][1]:.3f}, {value[0][2]:.3f}], "
+                value_str += f"[{value[1][0]:.3f}, {value[1][1]:.3f}, {value[1][2]:.3f}]]"
+                info_str += f"\t{key}: {value_str}\n"
+            elif key == "extents":
+                value_str = f"[l = {value[0]:.3f}, w = {value[1]:.3f}, h = {value[2]:.3f}]"
+                info_str += f"\t{key}: {value_str}\n"
+            else:
+                info_str += f"\t{key}: {value}\n"
+        
+        info_str += "Edges Info:\n"
+        for key, value in self.edges_info.items():
+            info_str += f"\t{key}: {value}" if key in [
+                "#internal_edges", "min_connectivity", "max_connectivity", "min_edge_length"
+            ] else f"\t{key}: {value:,}\n"
+
+        info_str += "Faces Info:\n"
+        for key, value in self.faces_info.items():
+            info_str += f"\t{key}: {value}\n"
+
+        return info_str
+
+def is_manifold(mesh: trimesh.Trimesh) -> bool:
+    """
+    Check if a mesh is manifold.
+
+    Parameters:
+    mesh (trimesh.Trimesh): The input mesh.
+    Returns:
+    bool: True if the mesh is manifold, False otherwise.
+    """
+    
+    edges_sorted = np.sort(mesh.edges, axis=1)
+    unique_edges, counts = np.unique(edges_sorted, axis=0, return_counts=True)
+    is_manifold = np.all(counts <= 2)
+
+    return is_manifold
+
 
 def normalize_vertices(vertices: np.ndarray, bound=0.95) -> np.ndarray:
     vmin = vertices.min(0)
@@ -18,7 +137,7 @@ def load_mesh(file_path):
     Returns:
     trimesh.Trimesh: The loaded mesh object.
     """
-    mesh: trimesh.Trimesh = trimesh.load(file_path)
+    mesh: trimesh.Trimesh = trimesh.load(file_path, process=False)
     if isinstance(mesh, trimesh.Scene):
         mesh = mesh.dump(concatenate=True)
     vertices = mesh.vertices
@@ -29,3 +148,47 @@ def load_mesh(file_path):
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
 
     return mesh
+
+def get_intersected_tria_ids(mesh: trimesh.Trimesh):
+    """
+    Identify intersected triangle IDs in a mesh using FCL.
+
+    Parameters:
+    mesh (trimesh.Trimesh): The input mesh.
+    Returns:
+    list: A list of intersected triangle IDs.
+    """
+    # 1. Build the FCL Model
+    model = fcl.BVHModel()
+    model.beginModel(len(mesh.vertices), len(mesh.faces))
+    model.addSubModel(mesh.vertices, mesh.faces)
+    model.endModel()
+
+    mesh_obj = fcl.CollisionObject(model, fcl.Transform())
+
+    # 2. Collision Request
+    request = fcl.CollisionRequest(enable_contact=True, num_max_contacts=len(mesh.faces) ** 2)
+    result = fcl.CollisionResult()
+    fcl.collide(mesh_obj, mesh_obj, request, result)
+
+    intersected_ids = set()
+
+    # 3. The "Zero Shared Vertices" Filter
+    for contact in result.contacts:
+        id1, id2 = contact.b1, contact.b2
+
+        if id1 == id2:
+            continue
+
+        # Get the vertex indices for both triangles
+        v1 = set(mesh.faces[id1])
+        v2 = set(mesh.faces[id2])
+
+        # INTERSECTION LOGIC:
+        # If they share 1 or more vertices, they are "touching" (neighbors).
+        # We only care if they share 0 vertices AND FCL says they collide.
+        if len(v1.intersection(v2)) == 0:
+            intersected_ids.add(id1)
+            intersected_ids.add(id2)
+
+    return list(intersected_ids)
