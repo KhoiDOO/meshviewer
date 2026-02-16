@@ -1,4 +1,4 @@
-# Mesh Viewer
+# Mesh Viewer for Research
 
 A powerful 3D mesh visualization and analysis tool built with OpenGL and Python. Load, inspect, and analyze 3D mesh files with real-time rendering and comprehensive mesh analysis.
 
@@ -29,6 +29,11 @@ Displays comprehensive mesh statistics in the console:
 - **Edge Info**: Internal/boundary edges, connectivity stats, edge lengths, aspect ratio
 - **Face Info**: Intersected faces, degenerate faces
 
+### Color Themes
+- **Dark Theme**: Dark background with light mesh colors (default)
+- **Light Theme**: Light background with dark mesh colors
+- Dynamic color adaptation for all visualization elements
+
 ### Screenshot Export
 - Capture current view to image file
 - Auto-crop to remove empty space
@@ -47,6 +52,7 @@ Displays comprehensive mesh statistics in the console:
 | **N** | Toggle Face Normals | Show/hide per-face normal vectors (green) |
 | **M** | Toggle Vertex Normals | Show/hide per-vertex normal vectors (blue) |
 | **P** | Toggle Point Cloud | Show/hide sampled point cloud (yellow, 8192 points) |
+| **U** | Toggle Color Theme | Switch between dark and light theme |
 | **C** | Capture Screenshot | Save current view as PNG/JPEG/PDF |
 
 ## Installation
@@ -75,8 +81,9 @@ python main.py
 2. Use **J/K/L** to switch between rendering modes
 3. Press **I** to highlight any self-intersecting faces
 4. Press **N/M** to visualize normals
-5. Press **C** to save a screenshot
-6. Check the console for detailed mesh analysis
+5. Press **U** to toggle between dark and light themes
+6. Press **C** to save a screenshot
+7. Check the console for detailed mesh analysis
 
 ## Technical Details
 
