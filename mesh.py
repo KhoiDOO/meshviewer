@@ -1,6 +1,10 @@
 import trimesh
 import numpy as np
 import fcl
+from colorama import Fore, Style, init
+
+# Initialize colorama for Windows compatibility
+init(autoreset=True)
 
 
 class MeshInfo:
@@ -19,8 +23,8 @@ class MeshInfo:
         self.edges_unique_length = self.mesh.edges_unique_length
 
         self.nondegenerate_faces_mask = mesh.nondegenerate_faces()
-        self.num_degenerate_faces = np.sum(~self.nondegenerate_faces_mask)
-        self.num_nondegenerate_faces = np.sum(self.nondegenerate_faces_mask)
+        self.num_degenerate_faces = np.sum(~self.nondegenerate_faces_mask).item()
+        self.num_nondegenerate_faces = np.sum(self.nondegenerate_faces_mask).item()
         
         self.stats = {
             "#vertices": len(mesh.vertices),
@@ -52,8 +56,8 @@ class MeshInfo:
         }
 
         self.edges_info = {
-            "#internal_edges": np.sum(self.edges_counts == 2),
-            "#boundary_edges": np.sum(self.edges_counts == 1),
+            "#internal_edges": np.sum(self.edges_counts == 2).item(),
+            "#boundary_edges": np.sum(self.edges_counts == 1).item(),
             "min_connectivity": int(self.vertex_connectivity.min()),
             "max_connectivity": int(self.vertex_connectivity.max()),
             "avg_connectivity": float(self.vertex_connectivity.mean()),
@@ -67,41 +71,61 @@ class MeshInfo:
             "#degenerate_faces": self.num_degenerate_faces,
             "#non_degenerate_faces": self.num_nondegenerate_faces,
         }
-
-
     
     def __str__(self):
-        info_str = "Mesh Information:\n"
-        info_str += "Statistics:\n"
+        def format_bool(value):
+            """Format boolean values with color."""
+            if value is True:
+                return f"{Fore.GREEN}True{Style.RESET_ALL}"
+            elif value is False:
+                return f"{Fore.RED}False{Style.RESET_ALL}"
+            return str(value)
+        
+        def format_value(value):
+            """Format values with appropriate color based on type."""
+            if isinstance(value, bool):
+                return format_bool(value)
+            elif isinstance(value, (int, float)):
+                return f"{Fore.YELLOW}{value:,}{Style.RESET_ALL}" if isinstance(value, int) else f"{Fore.YELLOW}{value:.6f}{Style.RESET_ALL}"
+            else:
+                return f"{Fore.WHITE}{value}{Style.RESET_ALL}"
+        
+        info_str = f"{Fore.CYAN}{Style.BRIGHT}╔═══ Mesh Information ═══╗{Style.RESET_ALL}\n"
+        
+        info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Statistics:{Style.RESET_ALL}\n"
         for key, value in self.stats.items():
-            info_str += f"\t{key}: {value}" if key in ["#vertices", "#faces", "#edges"] else f"\t{key}: {value}\n"
+            formatted_value = format_value(value)
+            info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
         
-        info_str += "Properties:\n"
+        info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Properties:{Style.RESET_ALL}\n"
         for key, value in self.properties.items():
-            info_str += f"\t{key}: {value}\n"
+            formatted_value = format_bool(value) if isinstance(value, bool) else format_value(value)
+            info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
         
-        info_str += "Analysis:\n"
+        info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Analysis:{Style.RESET_ALL}\n"
         for key, value in self.analysis.items():
             if key == "bounds":
-                value_str = f"[[{value[0][0]:.3f}, {value[0][1]:.3f}, {value[0][2]:.3f}], "
-                value_str += f"[{value[1][0]:.3f}, {value[1][1]:.3f}, {value[1][2]:.3f}]]"
-                info_str += f"\t{key}: {value_str}\n"
+                value_str = f"{Fore.YELLOW}[[{value[0][0]:.3f}, {value[0][1]:.3f}, {value[0][2]:.3f}], "
+                value_str += f"[{value[1][0]:.3f}, {value[1][1]:.3f}, {value[1][2]:.3f}]]{Style.RESET_ALL}"
+                info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {value_str}\n"
             elif key == "extents":
-                value_str = f"[l = {value[0]:.3f}, w = {value[1]:.3f}, h = {value[2]:.3f}]"
-                info_str += f"\t{key}: {value_str}\n"
+                value_str = f"{Fore.YELLOW}[l = {value[0]:.3f}, w = {value[1]:.3f}, h = {value[2]:.3f}]{Style.RESET_ALL}"
+                info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {value_str}\n"
             else:
-                info_str += f"\t{key}: {value}\n"
+                formatted_value = format_value(value)
+                info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
         
-        info_str += "Edges Info:\n"
+        info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Edges Info:{Style.RESET_ALL}\n"
         for key, value in self.edges_info.items():
-            info_str += f"\t{key}: {value}" if key in [
-                "#internal_edges", "min_connectivity", "max_connectivity", "min_edge_length[mel]",
-            ] else f"\t{key}: {value:,}\n"
+            formatted_value = format_value(value)
+            info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
 
-        info_str += "Faces Info:\n"
+        info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Faces Info:{Style.RESET_ALL}\n"
         for key, value in self.faces_info.items():
-            info_str += f"\t{key}: {value}\n"
-
+            formatted_value = format_value(value)
+            info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
+        
+        info_str += f"\n{Fore.CYAN}{Style.BRIGHT}╚═══════════════════════╝{Style.RESET_ALL}"
         return info_str
 
 def is_manifold(mesh: trimesh.Trimesh) -> bool:
@@ -116,7 +140,7 @@ def is_manifold(mesh: trimesh.Trimesh) -> bool:
     
     edges_sorted = np.sort(mesh.edges, axis=1)
     unique_edges, counts = np.unique(edges_sorted, axis=0, return_counts=True)
-    is_manifold = np.all(counts <= 2)
+    is_manifold = np.all(counts <= 2).item()
 
     return is_manifold
 
