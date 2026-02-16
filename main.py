@@ -54,12 +54,14 @@ class MeshViewer:
         self.mode = 0
         self.mesh: trimesh.Trimesh = None
         self.intersected_face_ids = None
-
+        
+        self.show_intersected = False
         self.show_face_normals = False
         self.show_vertex_normals = False
         self.show_point_cloud = False
 
         self.last_o_state = glfw.RELEASE
+        self.last_i_state = glfw.RELEASE
         self.last_j_state = glfw.RELEASE
         self.last_k_state = glfw.RELEASE
         self.last_l_state = glfw.RELEASE
@@ -71,7 +73,7 @@ class MeshViewer:
         if not glfw.init():
             raise Exception("GLFW could not be initialized!")
 
-        self.window = glfw.create_window(1000, 1000, "Mesh Viewer | O: Open File", None, None)
+        self.window = glfw.create_window(1000, 800, "Mesh Viewer | O: Open File", None, None)
         if not self.window:
             glfw.terminate()
             raise Exception("GLFW window could not be created!")
@@ -318,6 +320,13 @@ class MeshViewer:
         return line_verts.shape[0]
 
     def handle_input(self):
+
+        # Handle 'I' for toggling intersected faces
+        i_state = glfw.get_key(self.window, glfw.KEY_I)
+        if i_state == glfw.PRESS and self.last_i_state == glfw.RELEASE:
+            self.show_intersected = not self.show_intersected
+        self.last_i_state = i_state
+
         # Handle 'J' for Mode 0 (SOLID)
         j_state = glfw.get_key(self.window, glfw.KEY_J)
         if j_state == glfw.PRESS and self.last_j_state == glfw.RELEASE:
@@ -398,7 +407,7 @@ class MeshViewer:
                 glDrawElements(GL_TRIANGLES, self.main_index_count, GL_UNSIGNED_INT, None)
 
         # --- DRAW PASS 2: Highlighted Part ---
-        if self.intersected_index_count > 0:
+        if self.show_intersected and self.intersected_index_count > 0:
             glBindVertexArray(self.intersected_vao)
                 
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
