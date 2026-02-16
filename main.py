@@ -8,6 +8,7 @@ import math
 
 import tkinter as tk
 from tkinter import filedialog
+from PIL import Image
 
 import trimesh
 
@@ -56,6 +57,7 @@ class MeshViewer:
 
         self.show_face_normals = False
         self.show_vertex_normals = False
+        self.show_point_cloud = False
 
         self.last_o_state = glfw.RELEASE
         self.last_j_state = glfw.RELEASE
@@ -63,11 +65,13 @@ class MeshViewer:
         self.last_l_state = glfw.RELEASE
         self.last_n_state = glfw.RELEASE
         self.last_m_state = glfw.RELEASE
+        self.last_p_state = glfw.RELEASE
+        self.last_c_state = glfw.RELEASE
 
         if not glfw.init():
             raise Exception("GLFW could not be initialized!")
 
-        self.window = glfw.create_window(1000, 800, "Mesh Viewer | O: Open File", None, None)
+        self.window = glfw.create_window(1000, 1000, "Mesh Viewer | O: Open File", None, None)
         if not self.window:
             glfw.terminate()
             raise Exception("GLFW window could not be created!")
@@ -101,7 +105,12 @@ class MeshViewer:
         self.vertex_normals_vao = glGenVertexArrays(1)
         self.vertex_normals_vbo = glGenBuffers(1)
         self.vertex_normals_count = 0
-        
+
+        # Point Cloud Buffer (points)
+        self.point_cloud_vao = glGenVertexArrays(1)
+        self.point_cloud_vbo = glGenBuffers(1)
+        self.point_cloud_count = 0
+
         self.index_count = 0
 
         self.mvp_loc = glGetUniformLocation(self.shader, "mvp")
@@ -122,6 +131,47 @@ class MeshViewer:
         
         if file_path:
             self.load_mesh(file_path)
+    
+    def capture_screenshot(self):
+        """Capture the mesh area and save it."""
+        width, height = glfw.get_window_size(self.window)
+        
+        # Read full framebuffer
+        glReadBuffer(GL_FRONT)
+        pixels = glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE)
+        
+        # Convert to PIL Image and flip vertically
+        image_data = np.frombuffer(pixels, dtype=np.uint8).reshape(height, width, 3)
+        image_data = np.flipud(image_data)
+        img = Image.fromarray(image_data, 'RGB')
+        
+        # Autocrop to remove empty space (black background)
+        bbox = img.getbbox()
+        if bbox:
+            img = img.crop(bbox)
+        
+        # Open save dialog
+        root = tk.Tk()
+        root.withdraw()
+        
+        file_path = filedialog.asksaveasfilename(
+            title="Save Screenshot",
+            defaultextension=".png",
+            filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("PDF", "*.pdf"), ("All Files", "*.*")]
+        )
+        
+        root.destroy()
+        
+        if file_path:
+            try:
+                if file_path.lower().endswith('.pdf'):
+                    img.save(file_path, 'PDF')
+                    print(f"PDF saved: {file_path}")
+                else:
+                    img.save(file_path)
+                    print(f"Screenshot saved: {file_path}")
+            except Exception as e:
+                print(f"Failed to save screenshot: {e}")
 
     def load_mesh(self, path):
         try:
@@ -136,11 +186,20 @@ class MeshViewer:
                 print("Loaded mesh has no vertices. Please select a valid mesh file.")
                 return
             self.mesh = mesh
+
+            # mesh analysis and info extraction
             self.mesh_info = MeshInfo(mesh)
+            
+            # Store intersected face IDs for rendering
             self.intersected_face_ids = self.mesh_info.intersected_face_ids
+            
+            # Calculate diagonal and normal length for visualization
             bounds = self.mesh_info.analysis["bounds"]
             self.diag = np.linalg.norm(bounds[1] - bounds[0])
             self.normal_length = max(self.diag * 0.02, 0.01)
+
+            # Sample points for point cloud visualization (if needed)
+            self.points: np.ndarray = mesh.sample(8192)
             
             self.update_gpu_buffers()
 
@@ -166,6 +225,7 @@ class MeshViewer:
         # 3. Prepare Normals
         self.face_normals_count = self.setup_face_normals_buffer()
         self.vertex_normals_count = self.setup_vertex_normals_buffer()
+        self.point_cloud_count = self.setup_point_cloud_buffer()
 
     def setup_buffer(self, vao, vbo, ebo, faces):
         if len(faces) == 0: return 0
@@ -191,6 +251,22 @@ class MeshViewer:
         glEnableVertexAttribArray(1)
         
         return len(indices)
+
+    def setup_point_cloud_buffer(self):
+        points = self.points
+        colors = np.full((points.shape[0], 3), 1.0, dtype=np.float32)  # White points
+        data = np.hstack((points, colors)).astype(np.float32)
+
+        glBindVertexArray(self.point_cloud_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.point_cloud_vbo)
+        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+        glEnableVertexAttribArray(1)
+
+        return points.shape[0]
 
     def setup_face_normals_buffer(self):
         length = self.normal_length
@@ -272,11 +348,23 @@ class MeshViewer:
             self.show_vertex_normals = not self.show_vertex_normals
         self.last_m_state = m_state
 
+        # Handle 'P' for point cloud
+        p_state = glfw.get_key(self.window, glfw.KEY_P)
+        if p_state == glfw.PRESS and self.last_p_state == glfw.RELEASE:
+            self.show_point_cloud = not self.show_point_cloud
+        self.last_p_state = p_state
+
         # Handle 'O' for Open
         o_state = glfw.get_key(self.window, glfw.KEY_O)
         if o_state == glfw.PRESS and self.last_o_state == glfw.RELEASE:
             self.open_file_dialog()
         self.last_o_state = o_state
+
+        # Handle 'C' for Capture Screenshot
+        c_state = glfw.get_key(self.window, glfw.KEY_C)
+        if c_state == glfw.PRESS and self.last_c_state == glfw.RELEASE:
+            self.capture_screenshot()
+        self.last_c_state = c_state
     
     def render_mesh(self):
         glUseProgram(self.shader)
@@ -341,6 +429,11 @@ class MeshViewer:
             glBindVertexArray(self.vertex_normals_vao)
             glUniform3f(self.override_loc, 0.2, 0.6, 1.0) # Blue
             glDrawArrays(GL_LINES, 0, self.vertex_normals_count)
+        
+        if self.show_point_cloud and self.point_cloud_count > 0:
+            glBindVertexArray(self.point_cloud_vao)
+            glUniform3f(self.override_loc, 1.0, 1.0, 0.0) # Yellow
+            glDrawArrays(GL_POINTS, 0, self.point_cloud_count)
 
     def run(self):
         while not glfw.window_should_close(self.window):
