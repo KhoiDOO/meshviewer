@@ -60,6 +60,8 @@ class MeshViewer:
         self.show_vertex_normals = False
         self.show_point_cloud = False
 
+        self.color_theme = 0  # 0 = dark, 1 = light
+
         self.last_o_state = glfw.RELEASE
         self.last_i_state = glfw.RELEASE
         self.last_j_state = glfw.RELEASE
@@ -69,6 +71,7 @@ class MeshViewer:
         self.last_m_state = glfw.RELEASE
         self.last_p_state = glfw.RELEASE
         self.last_c_state = glfw.RELEASE
+        self.last_u_state = glfw.RELEASE
 
         if not glfw.init():
             raise Exception("GLFW could not be initialized!")
@@ -175,6 +178,31 @@ class MeshViewer:
             except Exception as e:
                 print(f"Failed to save screenshot: {e}")
 
+    def get_color_scheme(self):
+        """Return color scheme based on current theme."""
+        if self.color_theme == 0:  # Dark theme
+            return {
+                'background': (0.05, 0.05, 0.1, 1.0),
+                'mesh': (0.7, 0.7, 0.7),  # Light gray
+                'wireframe': (0.5, 0.5, 0.5),  # Medium gray
+                'wireframe_highlight': (1.0, 1.0, 1.0),  # White
+                'intersected': (1.0, 0.5, 0.0),  # Orange
+                'face_normals': (0.2, 0.8, 0.2),  # Green
+                'vertex_normals': (0.2, 0.6, 1.0),  # Blue
+                'point_cloud': (1.0, 1.0, 0.0)  # Yellow
+            }
+        else:  # Light theme
+            return {
+                'background': (0.95, 0.95, 0.95, 1.0),  # Light gray/white
+                'mesh': (0.3, 0.3, 0.3),  # Dark gray
+                'wireframe': (0.5, 0.5, 0.5),  # Medium gray
+                'wireframe_highlight': (0.0, 0.0, 0.0),  # Black
+                'intersected': (1.0, 0.5, 0.0),  # Orange
+                'face_normals': (0.0, 0.6, 0.0),  # Dark green
+                'vertex_normals': (0.0, 0.4, 0.8),  # Dark blue
+                'point_cloud': (0.8, 0.8, 0.0)  # Dark yellow
+            }
+
     def load_mesh(self, path):
         try:
             mesh = load_mesh(path)
@@ -232,9 +260,11 @@ class MeshViewer:
     def setup_buffer(self, vao, vbo, ebo, faces):
         if len(faces) == 0: return 0
         
+        colors_scheme = self.get_color_scheme()
+        
         # Un-index vertices so each triangle has unique data (easier for coloring/normals)
         vertices = self.mesh.vertices[faces].reshape(-1, 3)
-        colors = np.full((vertices.shape[0], 3), 0.7, dtype=np.float32)
+        colors = np.full((vertices.shape[0], 3), colors_scheme['mesh'], dtype=np.float32)
         
         data = np.hstack((vertices, colors)).astype(np.float32)
         indices = np.arange(len(vertices)).astype(np.uint32)
@@ -255,8 +285,9 @@ class MeshViewer:
         return len(indices)
 
     def setup_point_cloud_buffer(self):
+        colors_scheme = self.get_color_scheme()
         points = self.points
-        colors = np.full((points.shape[0], 3), 1.0, dtype=np.float32)  # White points
+        colors = np.full((points.shape[0], 3), colors_scheme['point_cloud'], dtype=np.float32)
         data = np.hstack((points, colors)).astype(np.float32)
 
         glBindVertexArray(self.point_cloud_vao)
@@ -271,6 +302,7 @@ class MeshViewer:
         return points.shape[0]
 
     def setup_face_normals_buffer(self):
+        colors_scheme = self.get_color_scheme()
         length = self.normal_length
 
         # Face centers and normals
@@ -281,7 +313,7 @@ class MeshViewer:
         line_verts[0::2] = centers
         line_verts[1::2] = centers + normals * length
 
-        colors = np.full((line_verts.shape[0], 3), 0.2, dtype=np.float32)
+        colors = np.full((line_verts.shape[0], 3), colors_scheme['face_normals'], dtype=np.float32)
         data = np.hstack((line_verts, colors)).astype(np.float32)
 
         glBindVertexArray(self.face_normals_vao)
@@ -296,6 +328,7 @@ class MeshViewer:
         return line_verts.shape[0]
 
     def setup_vertex_normals_buffer(self):
+        colors_scheme = self.get_color_scheme()
         length = self.normal_length
 
         verts = self.mesh.vertices
@@ -305,7 +338,7 @@ class MeshViewer:
         line_verts[0::2] = verts
         line_verts[1::2] = verts + normals * length
 
-        colors = np.full((line_verts.shape[0], 3), 0.2, dtype=np.float32)
+        colors = np.full((line_verts.shape[0], 3), colors_scheme['vertex_normals'], dtype=np.float32)
         data = np.hstack((line_verts, colors)).astype(np.float32)
 
         glBindVertexArray(self.vertex_normals_vao)
@@ -374,9 +407,20 @@ class MeshViewer:
         if c_state == glfw.PRESS and self.last_c_state == glfw.RELEASE:
             self.capture_screenshot()
         self.last_c_state = c_state
+
+        # Handle 'U' for toggle color theme
+        u_state = glfw.get_key(self.window, glfw.KEY_U)
+        if u_state == glfw.PRESS and self.last_u_state == glfw.RELEASE:
+            self.color_theme = 1 - self.color_theme
+            if self.mesh is not None:
+                self.update_gpu_buffers()  # Recreate buffers with new colors
+            theme_name = "Light" if self.color_theme == 1 else "Dark"
+            print(f"Switched to {theme_name} theme")
+        self.last_u_state = u_state
     
     def render_mesh(self):
         glUseProgram(self.shader)
+        colors_scheme = self.get_color_scheme()
 
         proj = Matrix44.perspective_projection(45.0, 1000/800, 0.1, 100.0)
         cam_x = math.sin(glfw.get_time() * 0.3) * 3.5
@@ -403,7 +447,7 @@ class MeshViewer:
             if self.mode == 1 or self.mode == 2: # Wireframe
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
                 glUniform1i(self.use_override_loc, True)
-                glUniform3f(self.override_loc, 0.5, 0.5, 0.5)
+                glUniform3f(self.override_loc, *colors_scheme['wireframe'])
                 glDrawElements(GL_TRIANGLES, self.main_index_count, GL_UNSIGNED_INT, None)
 
         # --- DRAW PASS 2: Highlighted Part ---
@@ -412,7 +456,7 @@ class MeshViewer:
                 
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
             glUniform1i(self.use_override_loc, True)
-            glUniform3f(self.override_loc, 1.0, 0.5, 0.0) # ORANGE
+            glUniform3f(self.override_loc, *colors_scheme['intersected'])
             
             glEnable(GL_POLYGON_OFFSET_FILL)
             glPolygonOffset(1.0, 1.0)
@@ -421,8 +465,8 @@ class MeshViewer:
 
             # 2. Wireframe Outline for Highlight
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-            glUniform1i(self.use_override_loc, True) # Keep override on for white color
-            glUniform3f(self.override_loc, 1.0, 1.0, 1.0) # White outline for selected
+            glUniform1i(self.use_override_loc, True) # Keep override on for outline color
+            glUniform3f(self.override_loc, *colors_scheme['wireframe_highlight'])
             glDrawElements(GL_TRIANGLES, self.intersected_index_count, GL_UNSIGNED_INT, None)
         
         # --- DRAW PASS 3: Normals ---
@@ -431,24 +475,25 @@ class MeshViewer:
 
         if self.show_face_normals and self.face_normals_count > 0:
             glBindVertexArray(self.face_normals_vao)
-            glUniform3f(self.override_loc, 0.2, 0.8, 0.2) # Green
+            glUniform3f(self.override_loc, *colors_scheme['face_normals'])
             glDrawArrays(GL_LINES, 0, self.face_normals_count)
 
         if self.show_vertex_normals and self.vertex_normals_count > 0:
             glBindVertexArray(self.vertex_normals_vao)
-            glUniform3f(self.override_loc, 0.2, 0.6, 1.0) # Blue
+            glUniform3f(self.override_loc, *colors_scheme['vertex_normals'])
             glDrawArrays(GL_LINES, 0, self.vertex_normals_count)
         
         if self.show_point_cloud and self.point_cloud_count > 0:
             glBindVertexArray(self.point_cloud_vao)
-            glUniform3f(self.override_loc, 1.0, 1.0, 0.0) # Yellow
+            glUniform3f(self.override_loc, *colors_scheme['point_cloud'])
             glDrawArrays(GL_POINTS, 0, self.point_cloud_count)
 
     def run(self):
         while not glfw.window_should_close(self.window):
             self.handle_input()
             
-            glClearColor(0.05, 0.05, 0.1, 1.0)
+            colors_scheme = self.get_color_scheme()
+            glClearColor(*colors_scheme['background'])
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             
             if self.mesh is not None:
