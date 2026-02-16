@@ -57,9 +57,10 @@ class MeshInfo:
             "min_connectivity": int(self.vertex_connectivity.min()),
             "max_connectivity": int(self.vertex_connectivity.max()),
             "avg_connectivity": float(self.vertex_connectivity.mean()),
-            "min_edge_length": float(self.edges_unique_length.min()),
-            "max_edge_length": float(self.edges_unique_length.max()),
+            "min_edge_length[mel]": float(self.edges_unique_length.min()),
+            "max_edge_length[mal]": float(self.edges_unique_length.max()),
         }
+        self.edges_info["aspect_ratio[ar][mal/mel]"] = self.edges_info["max_edge_length[mal]"] / self.edges_info["min_edge_length[mel]"] if self.edges_info["min_edge_length[mel]"] > 0 else float('inf')
 
         self.faces_info = {
             "#intersected_faces": len(self.intersected_face_ids),
@@ -94,7 +95,7 @@ class MeshInfo:
         info_str += "Edges Info:\n"
         for key, value in self.edges_info.items():
             info_str += f"\t{key}: {value}" if key in [
-                "#internal_edges", "min_connectivity", "max_connectivity", "min_edge_length"
+                "#internal_edges", "min_connectivity", "max_connectivity", "min_edge_length[mel]",
             ] else f"\t{key}: {value:,}\n"
 
         info_str += "Faces Info:\n"
