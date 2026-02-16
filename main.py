@@ -9,6 +9,8 @@ import math
 import tkinter as tk
 from tkinter import filedialog
 
+import trimesh
+
 from mesh import (
     load_mesh,
     MeshInfo
@@ -49,13 +51,18 @@ void main() {
 class MeshViewer:
     def __init__(self):
         self.mode = 0
-        self.mesh = None
+        self.mesh: trimesh.Trimesh = None
         self.intersected_face_ids = None
+
+        self.show_face_normals = False
+        self.show_vertex_normals = False
 
         self.last_o_state = glfw.RELEASE
         self.last_j_state = glfw.RELEASE
         self.last_k_state = glfw.RELEASE
         self.last_l_state = glfw.RELEASE
+        self.last_n_state = glfw.RELEASE
+        self.last_m_state = glfw.RELEASE
 
         if not glfw.init():
             raise Exception("GLFW could not be initialized!")
@@ -73,17 +80,27 @@ class MeshViewer:
             compileShader(FRAGMENT_SHADER, GL_FRAGMENT_SHADER)
         )
 
-        # Buffer Set 1: Main
+        # Main Buffer
         self.main_vao = glGenVertexArrays(1)
         self.main_vbo = glGenBuffers(1)
         self.main_ebo = glGenBuffers(1)
         self.main_index_count = 0
 
-        # Buffer Set 2: Intersected Faces
+        # Intersected Faces Buffer
         self.intersected_vao = glGenVertexArrays(1)
         self.intersected_vbo = glGenBuffers(1)
         self.intersected_ebo = glGenBuffers(1)
         self.intersected_index_count = 0
+
+        # Face Normals Buffer (lines)
+        self.face_normals_vao = glGenVertexArrays(1)
+        self.face_normals_vbo = glGenBuffers(1)
+        self.face_normals_count = 0
+
+        # Vertex Normals Buffer (lines)
+        self.vertex_normals_vao = glGenVertexArrays(1)
+        self.vertex_normals_vbo = glGenBuffers(1)
+        self.vertex_normals_count = 0
         
         self.index_count = 0
 
@@ -109,9 +126,21 @@ class MeshViewer:
     def load_mesh(self, path):
         try:
             mesh = load_mesh(path)
+            if mesh is None:
+                print("Mesh is None after loading. Check if the file is valid and supported.")
+                return
+            elif len(mesh.faces) == 0:
+                print("Loaded mesh has no faces. Please select a valid mesh file.")
+                return
+            elif len(mesh.vertices) == 0:
+                print("Loaded mesh has no vertices. Please select a valid mesh file.")
+                return
             self.mesh = mesh
             self.mesh_info = MeshInfo(mesh)
             self.intersected_face_ids = self.mesh_info.intersected_face_ids
+            bounds = self.mesh_info.analysis["bounds"]
+            self.diag = np.linalg.norm(bounds[1] - bounds[0])
+            self.normal_length = max(self.diag * 0.02, 0.01)
             
             self.update_gpu_buffers()
 
@@ -122,8 +151,6 @@ class MeshViewer:
             print(f"Failed to load mesh: {e}")
     
     def update_gpu_buffers(self):
-        if self.mesh is None: return
-
         # Split faces into two groups
         all_indices = np.arange(len(self.mesh.faces))
         intersected_mask = np.array([i in self.intersected_face_ids for i in all_indices])
@@ -135,6 +162,10 @@ class MeshViewer:
         # 2. Prepare Intersected Faces (Selected)
         intersected_faces = self.mesh.faces[intersected_mask]
         self.intersected_index_count = self.setup_buffer(self.intersected_vao, self.intersected_vbo, self.intersected_ebo, intersected_faces)
+
+        # 3. Prepare Normals
+        self.face_normals_count = self.setup_face_normals_buffer()
+        self.vertex_normals_count = self.setup_vertex_normals_buffer()
 
     def setup_buffer(self, vao, vbo, ebo, faces):
         if len(faces) == 0: return 0
@@ -161,6 +192,55 @@ class MeshViewer:
         
         return len(indices)
 
+    def setup_face_normals_buffer(self):
+        length = self.normal_length
+
+        # Face centers and normals
+        centers = self.mesh.triangles_center
+        normals = self.mesh.face_normals
+
+        line_verts = np.empty((centers.shape[0] * 2, 3), dtype=np.float32)
+        line_verts[0::2] = centers
+        line_verts[1::2] = centers + normals * length
+
+        colors = np.full((line_verts.shape[0], 3), 0.2, dtype=np.float32)
+        data = np.hstack((line_verts, colors)).astype(np.float32)
+
+        glBindVertexArray(self.face_normals_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.face_normals_vbo)
+        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+        glEnableVertexAttribArray(1)
+
+        return line_verts.shape[0]
+
+    def setup_vertex_normals_buffer(self):
+        length = self.normal_length
+
+        verts = self.mesh.vertices
+        normals = self.mesh.vertex_normals
+
+        line_verts = np.empty((verts.shape[0] * 2, 3), dtype=np.float32)
+        line_verts[0::2] = verts
+        line_verts[1::2] = verts + normals * length
+
+        colors = np.full((line_verts.shape[0], 3), 0.2, dtype=np.float32)
+        data = np.hstack((line_verts, colors)).astype(np.float32)
+
+        glBindVertexArray(self.vertex_normals_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vertex_normals_vbo)
+        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+        glEnableVertexAttribArray(1)
+
+        return line_verts.shape[0]
+
     def handle_input(self):
         # Handle 'J' for Mode 0 (SOLID)
         j_state = glfw.get_key(self.window, glfw.KEY_J)
@@ -179,6 +259,18 @@ class MeshViewer:
         if l_state == glfw.PRESS and self.last_l_state == glfw.RELEASE:
             self.mode = 2
         self.last_l_state = l_state
+
+        # Handle 'N' for per-face normals
+        n_state = glfw.get_key(self.window, glfw.KEY_N)
+        if n_state == glfw.PRESS and self.last_n_state == glfw.RELEASE:
+            self.show_face_normals = not self.show_face_normals
+        self.last_n_state = n_state
+
+        # Handle 'M' for per-vertex normals
+        m_state = glfw.get_key(self.window, glfw.KEY_M)
+        if m_state == glfw.PRESS and self.last_m_state == glfw.RELEASE:
+            self.show_vertex_normals = not self.show_vertex_normals
+        self.last_m_state = m_state
 
         # Handle 'O' for Open
         o_state = glfw.get_key(self.window, glfw.KEY_O)
@@ -235,6 +327,20 @@ class MeshViewer:
             glUniform1i(self.use_override_loc, True) # Keep override on for white color
             glUniform3f(self.override_loc, 1.0, 1.0, 1.0) # White outline for selected
             glDrawElements(GL_TRIANGLES, self.intersected_index_count, GL_UNSIGNED_INT, None)
+        
+        # --- DRAW PASS 3: Normals ---
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+        glUniform1i(self.use_override_loc, True)
+
+        if self.show_face_normals and self.face_normals_count > 0:
+            glBindVertexArray(self.face_normals_vao)
+            glUniform3f(self.override_loc, 0.2, 0.8, 0.2) # Green
+            glDrawArrays(GL_LINES, 0, self.face_normals_count)
+
+        if self.show_vertex_normals and self.vertex_normals_count > 0:
+            glBindVertexArray(self.vertex_normals_vao)
+            glUniform3f(self.override_loc, 0.2, 0.6, 1.0) # Blue
+            glDrawArrays(GL_LINES, 0, self.vertex_normals_count)
 
     def run(self):
         while not glfw.window_should_close(self.window):
