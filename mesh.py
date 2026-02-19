@@ -15,6 +15,9 @@ class MeshInfo:
         self.watertight_components = mesh.split(only_watertight=True)
         self.genus = 1 - (len(mesh.vertices) - len(mesh.edges_unique) + len(mesh.faces)) / 2
 
+        self.vertex_defects: np.ndarray = mesh.vertex_defects
+        self.vertex_degree: np.ndarray = mesh.vertex_degree
+
         self.edges_unique: np.ndarray
         self.edges_counts: np.ndarray
         self.edges_unique, self.edges_counts = np.unique(mesh.edges_sorted, axis=0, return_counts=True)
@@ -25,6 +28,9 @@ class MeshInfo:
         self.nondegenerate_faces_mask = mesh.nondegenerate_faces()
         self.num_degenerate_faces = np.sum(~self.nondegenerate_faces_mask).item()
         self.num_nondegenerate_faces = np.sum(self.nondegenerate_faces_mask).item()
+        self.face_angles: np.ndarray = mesh.face_angles
+        self.face_areas: np.ndarray = mesh.area_faces
+        self.face_adjacency_angles: np.ndarray = mesh.face_adjacency_angles
         
         self.stats = {
             "#vertices": len(mesh.vertices),
@@ -32,8 +38,8 @@ class MeshInfo:
             "#edges": len(mesh.edges_unique),
             "genus": self.genus,
             "#components": mesh.body_count,
-            "#components[split][watertight]": len(self.watertight_components),
-            "#components[split][non_watertight]": len(self.non_watertight_components),
+            "#components[split][watertight=True]": len(self.watertight_components),
+            "#components[split][non_watertight=True]": len(self.non_watertight_components),
         }
 
         self.properties = {
@@ -55,6 +61,14 @@ class MeshInfo:
             "extents": mesh.extents,
         }
 
+        self.vertices_info = {
+            "#coplanar_vertices": np.sum(np.abs(self.vertex_defects) < 1e-8).item(),
+            "#convex_vertices": np.sum(self.vertex_defects > 0).item(),
+            "#concave_vertices": np.sum(self.vertex_defects < 0).item(),
+            "min_vertex_degree": int(self.vertex_degree.min()),
+            "max_vertex_degree": int(self.vertex_degree.max()),
+        }
+
         self.edges_info = {
             "#internal_edges": np.sum(self.edges_counts == 2).item(),
             "#boundary_edges": np.sum(self.edges_counts == 1).item(),
@@ -70,6 +84,14 @@ class MeshInfo:
             "#intersected_faces": len(self.intersected_face_ids),
             "#degenerate_faces": self.num_degenerate_faces,
             "#non_degenerate_faces": self.num_nondegenerate_faces,
+            "min_face_angle[rad]": float(self.face_angles.min()),
+            "max_face_angle[rad]": float(self.face_angles.max()),
+            "min_face_angle[deg]": float(np.degrees(self.face_angles.min())),
+            "max_face_angle[deg]": float(np.degrees(self.face_angles.max())),
+            "min_face_area": float(self.face_areas.min()),
+            "max_face_area": float(self.face_areas.max()),
+            "min_dihedral_angle[deg]": float(np.degrees(np.min(self.face_adjacency_angles))),
+            "max_dihedral_angle[deg]": float(np.degrees(np.max(self.face_adjacency_angles))),
         }
     
     def __str__(self):
@@ -92,15 +114,27 @@ class MeshInfo:
         
         info_str = f"{Fore.CYAN}{Style.BRIGHT}╔═══ Mesh Information ═══╗{Style.RESET_ALL}\n"
         
+        # Statistics - group #vertices, #faces, #edges on same row
         info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Statistics:{Style.RESET_ALL}\n"
+        info_str += f"  {Fore.CYAN}{'#vertices / #faces / #edges':.<40}{Style.RESET_ALL}"
+        info_str += f" {format_value(self.stats['#vertices'])} / {format_value(self.stats['#faces'])} / {format_value(self.stats['#edges'])}\n"
+        
         for key, value in self.stats.items():
-            formatted_value = format_value(value)
-            info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
+            if key not in ['#vertices', '#faces', '#edges']:
+                formatted_value = format_value(value)
+                info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
         
         info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Properties:{Style.RESET_ALL}\n"
-        for key, value in self.properties.items():
-            formatted_value = format_bool(value) if isinstance(value, bool) else format_value(value)
-            info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
+        # Row 1: Topological properties
+        info_str += f"  {Fore.CYAN}watertight:{Style.RESET_ALL} {format_bool(self.properties['is_watertight'])}  "
+        info_str += f"{Fore.WHITE}|{Style.RESET_ALL} {Fore.CYAN}manifold:{Style.RESET_ALL} {format_bool(self.properties['is_manifold'])}  "
+        info_str += f"{Fore.WHITE}|{Style.RESET_ALL} {Fore.CYAN}winding_consistent:{Style.RESET_ALL} {format_bool(self.properties['is_winding_consistent'])}\n"
+        
+        # Row 2: Geometric and state properties
+        info_str += f"  {Fore.CYAN}convex:{Style.RESET_ALL} {format_bool(self.properties['is_convex'])}  "
+        info_str += f"{Fore.WHITE}|{Style.RESET_ALL} {Fore.CYAN}empty:{Style.RESET_ALL} {format_bool(self.properties['is_empty'])}  "
+        info_str += f"{Fore.WHITE}|{Style.RESET_ALL} {Fore.CYAN}intersecting:{Style.RESET_ALL} {format_bool(self.properties['is_intersecting'])}  "
+        info_str += f"{Fore.WHITE}|{Style.RESET_ALL} {Fore.CYAN}mutable:{Style.RESET_ALL} {format_bool(self.properties['mutable'])}\n"
         
         info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Analysis:{Style.RESET_ALL}\n"
         for key, value in self.analysis.items():
@@ -115,15 +149,56 @@ class MeshInfo:
                 formatted_value = format_value(value)
                 info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
         
+        # Vertices Info - group related items
+        info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Vertices Info:{Style.RESET_ALL}\n"
+        info_str += f"  {Fore.CYAN}{'#coplanar / #convex / #concave':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.vertices_info['#coplanar_vertices'])} / "
+        info_str += f"{format_value(self.vertices_info['#convex_vertices'])} / "
+        info_str += f"{format_value(self.vertices_info['#concave_vertices'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'min / max vertex_degree':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.vertices_info['min_vertex_degree'])} / "
+        info_str += f"{format_value(self.vertices_info['max_vertex_degree'])}\n"
+        
+        # Edges Info - group min/max pairs
         info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Edges Info:{Style.RESET_ALL}\n"
-        for key, value in self.edges_info.items():
-            formatted_value = format_value(value)
-            info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
+        info_str += f"  {Fore.CYAN}{'#internal / #boundary edges':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.edges_info['#internal_edges'])} / "
+        info_str += f"{format_value(self.edges_info['#boundary_edges'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'min / max / avg connectivity':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.edges_info['min_connectivity'])} / "
+        info_str += f"{format_value(self.edges_info['max_connectivity'])} / "
+        info_str += f"{format_value(self.edges_info['avg_connectivity'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'min / max edge_length[mel/mal]':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.edges_info['min_edge_length[mel]'])} / "
+        info_str += f"{format_value(self.edges_info['max_edge_length[mal]'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'aspect_ratio[ar][mal/mel]':.<40}{Style.RESET_ALL} {format_value(self.edges_info['aspect_ratio[ar][mal/mel]'])}\n"
 
+        # Faces Info - group min/max pairs
         info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Faces Info:{Style.RESET_ALL}\n"
-        for key, value in self.faces_info.items():
-            formatted_value = format_value(value)
-            info_str += f"  {Fore.CYAN}{key:.<40}{Style.RESET_ALL} {formatted_value}\n"
+        info_str += f"  {Fore.CYAN}{'#intersected_faces':.<40}{Style.RESET_ALL} {format_value(self.faces_info['#intersected_faces'])}\n"
+        info_str += f"  {Fore.CYAN}{'#degenerate / #non_degenerate':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.faces_info['#degenerate_faces'])} / "
+        info_str += f"{format_value(self.faces_info['#non_degenerate_faces'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'min / max face_angle[rad]':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.faces_info['min_face_angle[rad]'])} / "
+        info_str += f"{format_value(self.faces_info['max_face_angle[rad]'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'min / max face_angle[deg]':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.faces_info['min_face_angle[deg]'])} / "
+        info_str += f"{format_value(self.faces_info['max_face_angle[deg]'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'min / max face_area':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.faces_info['min_face_area'])} / "
+        info_str += f"{format_value(self.faces_info['max_face_area'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'min / max dihedral_angle[deg]':.<40}{Style.RESET_ALL} "
+        info_str += f"{format_value(self.faces_info['min_dihedral_angle[deg]'])} / "
+        info_str += f"{format_value(self.faces_info['max_dihedral_angle[deg]'])}\n"
         
         info_str += f"\n{Fore.CYAN}{Style.BRIGHT}╚═══════════════════════╝{Style.RESET_ALL}"
         return info_str
