@@ -54,6 +54,12 @@ Displays comprehensive mesh statistics in the console:
 | **P** | Toggle Point Cloud | Show/hide sampled point cloud (yellow, 8192 points) |
 | **U** | Toggle Color Theme | Switch between dark and light theme |
 | **C** | Capture Screenshot | Save current view as PNG/JPEG/PDF |
+| **SPACE** | Toggle Camera Rotation | Switch between automatic rotation and manual control |
+| **R** | Reset Camera | Reset camera to default position and angle |
+| **W** | Rotate Up | Rotate camera view upward (manual mode only) |
+| **A** | Rotate Left | Rotate camera view left (manual mode only) |
+| **S** | Rotate Down | Rotate camera view downward (manual mode only) |
+| **D** | Rotate Right | Rotate camera view right (manual mode only) |
 
 ## Installation
 
