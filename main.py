@@ -1,4 +1,5 @@
 import glfw
+import ctypes
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 
@@ -62,6 +63,14 @@ class MeshViewer:
 
         self.color_theme = 0  # 0 = dark, 1 = light
 
+        # Camera control
+        self.camera_rotating = True
+        self.camera_angle = 0.0  # Horizontal rotation angle around Y axis (radians)
+        self.camera_vertical_angle = 0.0  # Vertical rotation angle (pitch)
+        self.camera_distance = 3.5
+        self.camera_rotation_speed = 0.3  # Auto rotation speed
+        self.camera_manual_speed = 0.1 # Manual rotation speed (radians per second)
+
         self.last_o_state = glfw.RELEASE
         self.last_i_state = glfw.RELEASE
         self.last_j_state = glfw.RELEASE
@@ -72,6 +81,8 @@ class MeshViewer:
         self.last_p_state = glfw.RELEASE
         self.last_c_state = glfw.RELEASE
         self.last_u_state = glfw.RELEASE
+        self.last_space_state = glfw.RELEASE
+        self.last_r_state = glfw.RELEASE
 
         if not glfw.init():
             raise Exception("GLFW could not be initialized!")
@@ -417,15 +428,67 @@ class MeshViewer:
             theme_name = "Light" if self.color_theme == 1 else "Dark"
             print(f"Switched to {theme_name} theme")
         self.last_u_state = u_state
+
+        # Handle SPACE for toggling camera rotation
+        space_state = glfw.get_key(self.window, glfw.KEY_SPACE)
+        if space_state == glfw.PRESS and self.last_space_state == glfw.RELEASE:
+            self.camera_rotating = not self.camera_rotating
+            status = "rotating" if self.camera_rotating else "static"
+            print(f"Camera: {status}")
+        self.last_space_state = space_state
+
+        # Handle R for reset camera
+        r_state = glfw.get_key(self.window, glfw.KEY_R)
+        if r_state == glfw.PRESS and self.last_r_state == glfw.RELEASE:
+            self.camera_rotating = True
+            self.camera_angle = 0.0
+            self.camera_vertical_angle = 0.0
+            self.camera_distance = 3.5
+            print("Camera reset to default")
+        self.last_r_state = r_state
+
+        # Handle WASD for manual camera control (when not rotating)
+        if not self.camera_rotating:
+            delta_time = 1.0 / 60.0  # Assume ~60 FPS
+            rotation_step = self.camera_manual_speed * delta_time
+            max_vertical_angle = math.pi / 2.5  # Limit vertical rotation to ~72 degrees
+
+            # A: Rotate left (counter-clockwise)
+            if glfw.get_key(self.window, glfw.KEY_A) == glfw.PRESS:
+                self.camera_angle += rotation_step
+
+            # D: Rotate right (clockwise)
+            if glfw.get_key(self.window, glfw.KEY_D) == glfw.PRESS:
+                self.camera_angle -= rotation_step
+
+            # W: Rotate up (increase vertical angle)
+            if glfw.get_key(self.window, glfw.KEY_W) == glfw.PRESS:
+                self.camera_vertical_angle = min(max_vertical_angle, self.camera_vertical_angle + rotation_step)
+
+            # S: Rotate down (decrease vertical angle)
+            if glfw.get_key(self.window, glfw.KEY_S) == glfw.PRESS:
+                self.camera_vertical_angle = max(-max_vertical_angle, self.camera_vertical_angle - rotation_step)
     
     def render_mesh(self):
         glUseProgram(self.shader)
         colors_scheme = self.get_color_scheme()
 
         proj = Matrix44.perspective_projection(45.0, 1000/800, 0.1, 100.0)
-        cam_x = math.sin(glfw.get_time() * 0.3) * 3.5
-        cam_z = math.cos(glfw.get_time() * 0.3) * 3.5
-        view = Matrix44.look_at([cam_x, 1.5, cam_z], [0, 0, 0], [0, 1, 0])
+        
+        # Calculate camera position based on rotating or static mode
+        if self.camera_rotating:
+            angle = glfw.get_time() * self.camera_rotation_speed
+            vertical_angle = 0.0
+        else:
+            angle = self.camera_angle
+            vertical_angle = self.camera_vertical_angle
+        
+        # Calculate camera position with both horizontal and vertical rotation
+        horizontal_distance = math.cos(vertical_angle) * self.camera_distance
+        cam_x = math.sin(angle) * horizontal_distance
+        cam_z = math.cos(angle) * horizontal_distance
+        cam_y = math.sin(vertical_angle) * self.camera_distance + 1.0
+        view = Matrix44.look_at([cam_x, cam_y, cam_z], [0, 0, 0], [0, 1, 0])
         model = Matrix44.identity() # Object is already centered and scaled
         
         mvp = proj * view * model
