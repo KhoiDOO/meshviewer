@@ -18,66 +18,91 @@ from mesh import (
     MeshInfo
 )
 
-# --- SHADER SOURCE ---
-VERTEX_SHADER = """
-#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 aColor;
-
-uniform mat4 mvp;
-out vec3 vColor;
-
-void main() {
-    gl_Position = mvp * vec4(aPos, 1.0);
-    vColor = aColor;
-}
-"""
-
-FRAGMENT_SHADER = """
-#version 330 core
-in vec3 vColor;
-out vec4 FragColor;
-
-uniform vec3 overrideColor;
-uniform bool useOverride;
-
-void main() {
-    if (useOverride) {
-        FragColor = vec4(overrideColor, 1.0);
-    } else {
-        FragColor = vec4(vColor, 1.0);
-    }
-}
-"""
+from constants import (
+    VERTEX_SHADER,
+    FRAGMENT_SHADER,
+    WINDOW_WIDTH,
+    WINDOW_HEIGHT,
+    WINDOW_TITLE,
+    MODE_SOLID,
+    MODE_WIREFRAME,
+    MODE_BOTH,
+    THEME_DARK,
+    THEME_LIGHT,
+    COLOR_SCHEME_DARK,
+    COLOR_SCHEME_LIGHT,
+    DEFAULT_MODE,
+    DEFAULT_SHOW_INTERSECTED,
+    DEFAULT_SHOW_FACE_NORMALS,
+    DEFAULT_SHOW_VERTEX_NORMALS,
+    DEFAULT_SHOW_POINT_CLOUD,
+    DEFAULT_COLOR_THEME,
+    DEFAULT_CAMERA_ROTATING,
+    DEFAULT_CAMERA_ANGLE,
+    DEFAULT_CAMERA_VERTICAL_ANGLE,
+    DEFAULT_CAMERA_DISTANCE,
+    DEFAULT_CAMERA_HEIGHT,
+    DEFAULT_CAMERA_ROTATION_SPEED,
+    DEFAULT_CAMERA_MANUAL_SPEED,
+    DEFAULT_CAMERA_HEIGHT_SPEED,
+    DEFAULT_OBJECT_ROTATION_X,
+    DEFAULT_OBJECT_ROTATION_Y,
+    DEFAULT_OBJECT_ROTATION_Z,
+    DEFAULT_OBJECT_ROTATION_SPEED,
+    DEFAULT_OBJECT_SCALE,
+    DEFAULT_OBJECT_SCALE_SPEED,
+    NORMAL_LENGTH_FACTOR,
+    NORMAL_LENGTH_MIN,
+    POINT_CLOUD_SAMPLE_COUNT,
+    CAMERA_FOV,
+    CAMERA_NEAR_PLANE,
+    CAMERA_FAR_PLANE,
+    CAMERA_HEIGHT_MIN,
+    CAMERA_HEIGHT_MAX,
+    OBJECT_SCALE_MIN,
+    OBJECT_SCALE_MAX,
+    VERTEX_STRIDE,
+    COLOR_OFFSET,
+    POLYGON_OFFSET_FACTOR,
+    POLYGON_OFFSET_UNITS,
+    DELTA_TIME,
+    MESH_FILE_TYPES,
+    SCREENSHOT_FILE_TYPES,
+    SCREENSHOT_DEFAULT_EXTENSION,
+    DIALOG_TITLE_SELECT_MESH,
+    DIALOG_TITLE_SAVE_SCREENSHOT
+)
 
 class MeshViewer:
     def __init__(self):
-        self.mode = 0
+        self.mode = DEFAULT_MODE
         self.mesh: trimesh.Trimesh = None
         self.intersected_face_ids = None
         
-        self.show_intersected = False
-        self.show_face_normals = False
-        self.show_vertex_normals = False
-        self.show_point_cloud = False
+        self.show_intersected = DEFAULT_SHOW_INTERSECTED
+        self.show_face_normals = DEFAULT_SHOW_FACE_NORMALS
+        self.show_vertex_normals = DEFAULT_SHOW_VERTEX_NORMALS
+        self.show_point_cloud = DEFAULT_SHOW_POINT_CLOUD
 
-        self.color_theme = 0  # 0 = dark, 1 = light
+        self.color_theme = DEFAULT_COLOR_THEME
 
         # Camera control
-        self.camera_rotating = True
-        self.camera_angle = 0.0  # Horizontal rotation angle around Y axis (radians)
-        self.camera_vertical_angle = 0.0  # Vertical rotation angle (pitch)
-        self.camera_distance = 3.5
-        self.camera_rotation_speed = 0.3  # Auto rotation speed
-        self.camera_manual_speed = 0.1 # Manual rotation speed (radians per second)
+        self.camera_rotating = DEFAULT_CAMERA_ROTATING
+        self.camera_angle = DEFAULT_CAMERA_ANGLE
+        self.camera_vertical_angle = DEFAULT_CAMERA_VERTICAL_ANGLE
+        self.camera_distance = DEFAULT_CAMERA_DISTANCE
+        self.camera_height = DEFAULT_CAMERA_HEIGHT
+        self.camera_rotation_speed = DEFAULT_CAMERA_ROTATION_SPEED
+        self.camera_manual_speed = DEFAULT_CAMERA_MANUAL_SPEED
+        self.camera_height_speed = DEFAULT_CAMERA_HEIGHT_SPEED
 
         # Object control
-        self.object_rotation_x = 0.0
-        self.object_rotation_y = 0.0
-        self.object_rotation_z = 0.0
-        self.object_rotation_speed = 0.2  # Radians per second
-        self.object_scale = 1.0
-        self.object_scale_speed = 0.2  # Units per second
+        self.object_rotation_x = DEFAULT_OBJECT_ROTATION_X
+        self.object_rotation_y = DEFAULT_OBJECT_ROTATION_Y
+        self.object_rotation_z = DEFAULT_OBJECT_ROTATION_Z
+        self.object_rotation_speed = DEFAULT_OBJECT_ROTATION_SPEED
+        self.object_scale = DEFAULT_OBJECT_SCALE
+        self.object_scale_speed = DEFAULT_OBJECT_SCALE_SPEED
 
         self.last_o_state = glfw.RELEASE
         self.last_i_state = glfw.RELEASE
@@ -95,7 +120,7 @@ class MeshViewer:
         if not glfw.init():
             raise Exception("GLFW could not be initialized!")
 
-        self.window = glfw.create_window(1000, 800, "Mesh Viewer | O: Open File", None, None)
+        self.window = glfw.create_window(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, None, None)
         if not self.window:
             glfw.terminate()
             raise Exception("GLFW window could not be created!")
@@ -147,8 +172,8 @@ class MeshViewer:
         root.withdraw()
         
         file_path = filedialog.askopenfilename(
-            title="Select Mesh File",
-            filetypes=[("Mesh Files", "*.obj *.stl *.ply *.glb *.off"), ("All Files", "*.*")]
+            title=DIALOG_TITLE_SELECT_MESH,
+            filetypes=MESH_FILE_TYPES
         )
         
         root.destroy()
@@ -179,9 +204,9 @@ class MeshViewer:
         root.withdraw()
         
         file_path = filedialog.asksaveasfilename(
-            title="Save Screenshot",
-            defaultextension=".png",
-            filetypes=[("PNG", "*.png"), ("JPEG", "*.jpg"), ("PDF", "*.pdf"), ("All Files", "*.*")]
+            title=DIALOG_TITLE_SAVE_SCREENSHOT,
+            defaultextension=SCREENSHOT_DEFAULT_EXTENSION,
+            filetypes=SCREENSHOT_FILE_TYPES
         )
         
         root.destroy()
@@ -199,28 +224,10 @@ class MeshViewer:
 
     def get_color_scheme(self):
         """Return color scheme based on current theme."""
-        if self.color_theme == 0:  # Dark theme
-            return {
-                'background': (0.05, 0.05, 0.1, 1.0),
-                'mesh': (0.7, 0.7, 0.7),  # Light gray
-                'wireframe': (0.5, 0.5, 0.5),  # Medium gray
-                'wireframe_highlight': (1.0, 1.0, 1.0),  # White
-                'intersected': (1.0, 0.5, 0.0),  # Orange
-                'face_normals': (0.2, 0.8, 0.2),  # Green
-                'vertex_normals': (0.2, 0.6, 1.0),  # Blue
-                'point_cloud': (1.0, 1.0, 0.0)  # Yellow
-            }
-        else:  # Light theme
-            return {
-                'background': (0.95, 0.95, 0.95, 1.0),  # Light gray/white
-                'mesh': (0.3, 0.3, 0.3),  # Dark gray
-                'wireframe': (0.5, 0.5, 0.5),  # Medium gray
-                'wireframe_highlight': (0.0, 0.0, 0.0),  # Black
-                'intersected': (1.0, 0.5, 0.0),  # Orange
-                'face_normals': (0.0, 0.6, 0.0),  # Dark green
-                'vertex_normals': (0.0, 0.4, 0.8),  # Dark blue
-                'point_cloud': (0.8, 0.8, 0.0)  # Dark yellow
-            }
+        if self.color_theme == THEME_DARK:
+            return COLOR_SCHEME_DARK
+        else:
+            return COLOR_SCHEME_LIGHT
 
     def load_mesh(self, path):
         try:
@@ -245,10 +252,10 @@ class MeshViewer:
             # Calculate diagonal and normal length for visualization
             bounds = self.mesh_info.analysis["bounds"]
             self.diag = np.linalg.norm(bounds[1] - bounds[0])
-            self.normal_length = max(self.diag * 0.02, 0.01)
+            self.normal_length = max(self.diag * NORMAL_LENGTH_FACTOR, NORMAL_LENGTH_MIN)
 
             # Sample points for point cloud visualization (if needed)
-            self.points: np.ndarray = mesh.sample(8192)
+            self.points: np.ndarray = mesh.sample(POINT_CLOUD_SAMPLE_COUNT)
             
             self.update_gpu_buffers()
 
@@ -264,7 +271,8 @@ class MeshViewer:
         intersected_mask = np.array([i in self.intersected_face_ids for i in all_indices])
         
         # 1. Prepare Main Mesh (Not highlighted)
-        main_faces = self.mesh.faces[~intersected_mask]
+        # main_faces = self.mesh.faces[~intersected_mask]
+        main_faces = self.mesh.faces
         self.main_index_count = self.setup_buffer(self.main_vao, self.main_vbo, self.main_ebo, main_faces)
 
         # 2. Prepare Intersected Faces (Selected)
@@ -296,9 +304,9 @@ class MeshViewer:
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_DYNAMIC_DRAW)
 
         # Layout: Pos(3), Color(3)
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
         glEnableVertexAttribArray(1)
         
         return len(indices)
@@ -313,9 +321,9 @@ class MeshViewer:
         glBindBuffer(GL_ARRAY_BUFFER, self.point_cloud_vbo)
         glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
 
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
         glEnableVertexAttribArray(1)
 
         return points.shape[0]
@@ -339,9 +347,9 @@ class MeshViewer:
         glBindBuffer(GL_ARRAY_BUFFER, self.face_normals_vbo)
         glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
 
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
         glEnableVertexAttribArray(1)
 
         return line_verts.shape[0]
@@ -364,9 +372,9 @@ class MeshViewer:
         glBindBuffer(GL_ARRAY_BUFFER, self.vertex_normals_vbo)
         glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
 
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
         glEnableVertexAttribArray(1)
 
         return line_verts.shape[0]
@@ -382,19 +390,19 @@ class MeshViewer:
         # Handle 'J' for Mode 0 (SOLID)
         j_state = glfw.get_key(self.window, glfw.KEY_J)
         if j_state == glfw.PRESS and self.last_j_state == glfw.RELEASE:
-            self.mode = 0
+            self.mode = MODE_SOLID
         self.last_j_state = j_state
 
         # Handle 'K' for Mode 1 (WIREFRAME)
         k_state = glfw.get_key(self.window, glfw.KEY_K)
         if k_state == glfw.PRESS and self.last_k_state == glfw.RELEASE:
-            self.mode = 1
+            self.mode = MODE_WIREFRAME
         self.last_k_state = k_state
 
         # Handle 'L' for Mode 2 (BOTH)
         l_state = glfw.get_key(self.window, glfw.KEY_L)
         if l_state == glfw.PRESS and self.last_l_state == glfw.RELEASE:
-            self.mode = 2
+            self.mode = MODE_BOTH
         self.last_l_state = l_state
 
         # Handle 'N' for per-face normals
@@ -430,10 +438,10 @@ class MeshViewer:
         # Handle 'U' for toggle color theme
         u_state = glfw.get_key(self.window, glfw.KEY_U)
         if u_state == glfw.PRESS and self.last_u_state == glfw.RELEASE:
-            self.color_theme = 1 - self.color_theme
+            self.color_theme = THEME_LIGHT if self.color_theme == THEME_DARK else THEME_DARK
             if self.mesh is not None:
                 self.update_gpu_buffers()  # Recreate buffers with new colors
-            theme_name = "Light" if self.color_theme == 1 else "Dark"
+            theme_name = "Light" if self.color_theme == THEME_LIGHT else "Dark"
             print(f"Switched to {theme_name} theme")
         self.last_u_state = u_state
 
@@ -448,17 +456,19 @@ class MeshViewer:
         # Handle R for reset camera
         r_state = glfw.get_key(self.window, glfw.KEY_R)
         if r_state == glfw.PRESS and self.last_r_state == glfw.RELEASE:
-            self.camera_rotating = True
-            self.camera_angle = 0.0
-            self.camera_vertical_angle = 0.0
-            self.camera_distance = 3.5
+            self.camera_rotating = DEFAULT_CAMERA_ROTATING
+            self.camera_angle = DEFAULT_CAMERA_ANGLE
+            self.camera_vertical_angle = DEFAULT_CAMERA_VERTICAL_ANGLE
+            self.camera_distance = DEFAULT_CAMERA_DISTANCE
+            self.camera_height = DEFAULT_CAMERA_HEIGHT
             print("Camera reset to default")
         self.last_r_state = r_state
 
         # Handle object rotation and zoom (always available)
-        delta_time = 1.0 / 60.0  # Assume ~60 FPS
+        delta_time = DELTA_TIME
         rotation_step = self.object_rotation_speed * delta_time
         scale_step = self.object_scale_speed * delta_time
+        height_step = self.camera_height_speed * delta_time
 
         # A/D: Rotate object left/right (Y axis)
         if glfw.get_key(self.window, glfw.KEY_A) == glfw.PRESS:
@@ -480,29 +490,34 @@ class MeshViewer:
 
         # Z/X: Scale object down/up
         if glfw.get_key(self.window, glfw.KEY_Z) == glfw.PRESS:
-            self.object_scale = max(0.1, self.object_scale - scale_step)
+            self.object_scale = max(OBJECT_SCALE_MIN, self.object_scale - scale_step)
         if glfw.get_key(self.window, glfw.KEY_X) == glfw.PRESS:
-            self.object_scale = min(10.0, self.object_scale + scale_step)
+            self.object_scale = min(OBJECT_SCALE_MAX, self.object_scale + scale_step)
+
+        # Up/Down: Move camera vertically
+        if glfw.get_key(self.window, glfw.KEY_UP) == glfw.PRESS:
+            self.camera_height = min(CAMERA_HEIGHT_MAX, self.camera_height + height_step)
+        if glfw.get_key(self.window, glfw.KEY_DOWN) == glfw.PRESS:
+            self.camera_height = max(CAMERA_HEIGHT_MIN, self.camera_height - height_step)
     
     def render_mesh(self):
         glUseProgram(self.shader)
         colors_scheme = self.get_color_scheme()
 
-        proj = Matrix44.perspective_projection(45.0, 1000/800, 0.1, 100.0)
+        proj = Matrix44.perspective_projection(CAMERA_FOV, WINDOW_WIDTH/WINDOW_HEIGHT, CAMERA_NEAR_PLANE, CAMERA_FAR_PLANE)
         
-        # Calculate camera position based on rotating or static mode
+        # Calculate camera position (horizontal orbit only)
         if self.camera_rotating:
             angle = glfw.get_time() * self.camera_rotation_speed
-            vertical_angle = 0.0
         else:
             angle = self.camera_angle
-            vertical_angle = self.camera_vertical_angle
+        vertical_angle = self.camera_vertical_angle
         
         # Calculate camera position with both horizontal and vertical rotation
         horizontal_distance = math.cos(vertical_angle) * self.camera_distance
         cam_x = math.sin(angle) * horizontal_distance
         cam_z = math.cos(angle) * horizontal_distance
-        cam_y = math.sin(vertical_angle) * self.camera_distance + 1.0
+        cam_y = self.camera_height
         view = Matrix44.look_at([cam_x, cam_y, cam_z], [0, 0, 0], [0, 1, 0])
         model = (
             Matrix44.from_x_rotation(self.object_rotation_x)
@@ -519,15 +534,15 @@ class MeshViewer:
             glBindVertexArray(self.main_vao)
             glUniform1i(self.use_override_loc, False)
             
-            if self.mode == 0 or self.mode == 2: # Solid
+            if self.mode == MODE_SOLID or self.mode == MODE_BOTH:
                 # Add offset to push solid faces away from lines/highlighter
                 glEnable(GL_POLYGON_OFFSET_FILL)
-                glPolygonOffset(1.0, 1.0)
+                glPolygonOffset(POLYGON_OFFSET_FACTOR, POLYGON_OFFSET_UNITS)
                 glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
                 glDrawElements(GL_TRIANGLES, self.main_index_count, GL_UNSIGNED_INT, None)
                 glDisable(GL_POLYGON_OFFSET_FILL)
             
-            if self.mode == 1 or self.mode == 2: # Wireframe
+            if self.mode == MODE_WIREFRAME or self.mode == MODE_BOTH:
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
                 glUniform1i(self.use_override_loc, True)
                 glUniform3f(self.override_loc, *colors_scheme['wireframe'])
@@ -542,7 +557,7 @@ class MeshViewer:
             glUniform3f(self.override_loc, *colors_scheme['intersected'])
             
             glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(1.0, 1.0)
+            glPolygonOffset(POLYGON_OFFSET_FACTOR, POLYGON_OFFSET_UNITS)
             glDrawElements(GL_TRIANGLES, self.intersected_index_count, GL_UNSIGNED_INT, None)
             glDisable(GL_POLYGON_OFFSET_FILL)
 
