@@ -65,6 +65,8 @@ Displays comprehensive mesh statistics in the console:
 | **E** | Roll Object Right | Roll object right (Z axis) |
 | **Z** | Scale Down | Scale object down |
 | **X** | Scale Up | Scale object up |
+| **↑** | Move Camera Up | Increase camera height |
+| **↓** | Move Camera Down | Decrease camera height |
 
 ## Installation
 
@@ -96,6 +98,7 @@ python main.py
 6. Press **C** to save a screenshot
 7. Check the console for detailed mesh analysis
 8. Use **W/A/S/D/Q/E** to rotate the object and **Z/X** to scale
+9. Use **↑/↓** arrow keys to adjust camera height
 
 ## Technical Details
 
