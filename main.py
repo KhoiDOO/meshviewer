@@ -71,6 +71,14 @@ class MeshViewer:
         self.camera_rotation_speed = 0.3  # Auto rotation speed
         self.camera_manual_speed = 0.1 # Manual rotation speed (radians per second)
 
+        # Object control
+        self.object_rotation_x = 0.0
+        self.object_rotation_y = 0.0
+        self.object_rotation_z = 0.0
+        self.object_rotation_speed = 0.2  # Radians per second
+        self.object_scale = 1.0
+        self.object_scale_speed = 0.2  # Units per second
+
         self.last_o_state = glfw.RELEASE
         self.last_i_state = glfw.RELEASE
         self.last_j_state = glfw.RELEASE
@@ -447,27 +455,34 @@ class MeshViewer:
             print("Camera reset to default")
         self.last_r_state = r_state
 
-        # Handle WASD for manual camera control (when not rotating)
-        if not self.camera_rotating:
-            delta_time = 1.0 / 60.0  # Assume ~60 FPS
-            rotation_step = self.camera_manual_speed * delta_time
-            max_vertical_angle = math.pi / 2.5  # Limit vertical rotation to ~72 degrees
+        # Handle object rotation and zoom (always available)
+        delta_time = 1.0 / 60.0  # Assume ~60 FPS
+        rotation_step = self.object_rotation_speed * delta_time
+        scale_step = self.object_scale_speed * delta_time
 
-            # A: Rotate left (counter-clockwise)
-            if glfw.get_key(self.window, glfw.KEY_A) == glfw.PRESS:
-                self.camera_angle += rotation_step
+        # A/D: Rotate object left/right (Y axis)
+        if glfw.get_key(self.window, glfw.KEY_A) == glfw.PRESS:
+            self.object_rotation_y += rotation_step
+        if glfw.get_key(self.window, glfw.KEY_D) == glfw.PRESS:
+            self.object_rotation_y -= rotation_step
 
-            # D: Rotate right (clockwise)
-            if glfw.get_key(self.window, glfw.KEY_D) == glfw.PRESS:
-                self.camera_angle -= rotation_step
+        # W/S: Rotate object up/down (X axis)
+        if glfw.get_key(self.window, glfw.KEY_W) == glfw.PRESS:
+            self.object_rotation_x += rotation_step
+        if glfw.get_key(self.window, glfw.KEY_S) == glfw.PRESS:
+            self.object_rotation_x -= rotation_step
 
-            # W: Rotate up (increase vertical angle)
-            if glfw.get_key(self.window, glfw.KEY_W) == glfw.PRESS:
-                self.camera_vertical_angle = min(max_vertical_angle, self.camera_vertical_angle + rotation_step)
+        # Q/E: Roll object (Z axis)
+        if glfw.get_key(self.window, glfw.KEY_Q) == glfw.PRESS:
+            self.object_rotation_z += rotation_step
+        if glfw.get_key(self.window, glfw.KEY_E) == glfw.PRESS:
+            self.object_rotation_z -= rotation_step
 
-            # S: Rotate down (decrease vertical angle)
-            if glfw.get_key(self.window, glfw.KEY_S) == glfw.PRESS:
-                self.camera_vertical_angle = max(-max_vertical_angle, self.camera_vertical_angle - rotation_step)
+        # Z/X: Scale object down/up
+        if glfw.get_key(self.window, glfw.KEY_Z) == glfw.PRESS:
+            self.object_scale = max(0.1, self.object_scale - scale_step)
+        if glfw.get_key(self.window, glfw.KEY_X) == glfw.PRESS:
+            self.object_scale = min(10.0, self.object_scale + scale_step)
     
     def render_mesh(self):
         glUseProgram(self.shader)
@@ -489,7 +504,12 @@ class MeshViewer:
         cam_z = math.cos(angle) * horizontal_distance
         cam_y = math.sin(vertical_angle) * self.camera_distance + 1.0
         view = Matrix44.look_at([cam_x, cam_y, cam_z], [0, 0, 0], [0, 1, 0])
-        model = Matrix44.identity() # Object is already centered and scaled
+        model = (
+            Matrix44.from_x_rotation(self.object_rotation_x)
+            * Matrix44.from_y_rotation(self.object_rotation_y)
+            * Matrix44.from_z_rotation(self.object_rotation_z)
+            * Matrix44.from_scale([self.object_scale, self.object_scale, self.object_scale])
+        )
         
         mvp = proj * view * model
         glUniformMatrix4fv(self.mvp_loc, 1, GL_FALSE, mvp)
