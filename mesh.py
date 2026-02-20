@@ -47,7 +47,7 @@ class MeshInfo:
             "is_empty": mesh.is_empty,
             "is_winding_consistent": mesh.is_winding_consistent,
             "is_convex": mesh.is_convex,
-            "is_manifold": is_manifold(mesh),
+            "is_manifold": is_manifold(mesh) and len(self.intersected_face_ids) == 0,
             "mutable": mesh.mutable,
             "is_intersecting": len(self.intersected_face_ids) > 0,
         }
@@ -215,7 +215,7 @@ def is_manifold(mesh: trimesh.Trimesh) -> bool:
     
     edges_sorted = np.sort(mesh.edges, axis=1)
     unique_edges, counts = np.unique(edges_sorted, axis=0, return_counts=True)
-    is_manifold = np.all(counts <= 2).item()
+    is_manifold = np.all(counts == 2).item()
 
     return is_manifold
 
