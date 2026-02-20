@@ -14,6 +14,7 @@ A powerful 3D mesh visualization and analysis tool built with OpenGL and Python.
 - **Wireframe Mode**: Edge-based visualization  
 - **Combined Mode**: Solid + wireframe overlay
 - Automatic camera rotation around mesh
+- Manual object rotation and scaling controls
 
 ### Mesh Analysis & Visualization
 - **Intersected Faces Detection**: Automatically detects and highlights self-intersecting triangles
@@ -56,10 +57,14 @@ Displays comprehensive mesh statistics in the console:
 | **C** | Capture Screenshot | Save current view as PNG/JPEG/PDF |
 | **SPACE** | Toggle Camera Rotation | Switch between automatic rotation and manual control |
 | **R** | Reset Camera | Reset camera to default position and angle |
-| **W** | Rotate Up | Rotate camera view upward (manual mode only) |
-| **A** | Rotate Left | Rotate camera view left (manual mode only) |
-| **S** | Rotate Down | Rotate camera view downward (manual mode only) |
-| **D** | Rotate Right | Rotate camera view right (manual mode only) |
+| **W** | Rotate Object Up | Rotate object upward (X axis) |
+| **A** | Rotate Object Left | Rotate object left (Y axis) |
+| **S** | Rotate Object Down | Rotate object downward (X axis) |
+| **D** | Rotate Object Right | Rotate object right (Y axis) |
+| **Q** | Roll Object Left | Roll object left (Z axis) |
+| **E** | Roll Object Right | Roll object right (Z axis) |
+| **Z** | Scale Down | Scale object down |
+| **X** | Scale Up | Scale object up |
 
 ## Installation
 
@@ -90,6 +95,7 @@ python main.py
 5. Press **U** to toggle between dark and light themes
 6. Press **C** to save a screenshot
 7. Check the console for detailed mesh analysis
+8. Use **W/A/S/D/Q/E** to rotate the object and **Z/X** to scale
 
 ## Technical Details
 
