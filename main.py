@@ -7,8 +7,8 @@ import numpy as np
 from pyrr import Matrix44
 import math
 
-import tkinter as tk
-from tkinter import filedialog
+import subprocess
+import platform
 from PIL import Image
 
 import trimesh
@@ -119,6 +119,11 @@ class MeshViewer:
 
         if not glfw.init():
             raise Exception("GLFW could not be initialized!")
+        
+        glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
+        glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
+        glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+        glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, GL_TRUE)
 
         self.window = glfw.create_window(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, None, None)
         if not self.window:
@@ -127,6 +132,10 @@ class MeshViewer:
 
         glfw.make_context_current(self.window)
         glEnable(GL_DEPTH_TEST)
+        
+        # Create and bind a VAO before shader compilation (required for macOS Core Profile)
+        dummy_vao = glGenVertexArrays(1)
+        glBindVertexArray(dummy_vao)
         
         self.shader = compileProgram(
             compileShader(VERTEX_SHADER, GL_VERTEX_SHADER),
@@ -166,17 +175,62 @@ class MeshViewer:
         self.override_loc = glGetUniformLocation(self.shader, "overrideColor")
         self.use_override_loc = glGetUniformLocation(self.shader, "useOverride")
 
+    def native_macos_open_dialog(self, title, file_types):
+        """Show native macOS file open dialog using osascript."""
+        # Build file type filter for macOS
+        extensions = []
+        for label, pattern in file_types:
+            if label != "All Files":
+                # Extract extensions like *.obj -> obj
+                exts = [ext.replace('*', '').replace('.', '') for ext in pattern.split()]
+                extensions.extend(exts)
+        
+        if extensions:
+            type_filter = ','.join(f'"{ext}"' for ext in extensions)
+            script = f'POSIX path of (choose file with prompt "{title}" of type {{{type_filter}}} without invisibles)'
+        else:
+            script = f'POSIX path of (choose file with prompt "{title}" without invisibles)'
+        
+        try:
+            result = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return None  # User cancelled
+    
+    def native_macos_save_dialog(self, title, default_extension, file_types):
+        """Show native macOS file save dialog using osascript."""
+        script = f'POSIX path of (choose file name with prompt "{title}" default name "screenshot{default_extension}")'
+        
+        try:
+            result = subprocess.run(
+                ['osascript', '-e', script],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return None  # User cancelled
+
     def open_file_dialog(self):
-        # Create a hidden Tkinter root window
-        root = tk.Tk()
-        root.withdraw()
-        
-        file_path = filedialog.askopenfilename(
-            title=DIALOG_TITLE_SELECT_MESH,
-            filetypes=MESH_FILE_TYPES
-        )
-        
-        root.destroy()
+        if platform.system() == 'Darwin':  # macOS
+            file_path = self.native_macos_open_dialog(DIALOG_TITLE_SELECT_MESH, MESH_FILE_TYPES)
+        else:
+            # Fallback to tkinter for other platforms
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            file_path = filedialog.askopenfilename(
+                title=DIALOG_TITLE_SELECT_MESH,
+                filetypes=MESH_FILE_TYPES
+            )
+            root.destroy()
         
         if file_path:
             self.load_mesh(file_path)
@@ -200,16 +254,24 @@ class MeshViewer:
             img = img.crop(bbox)
         
         # Open save dialog
-        root = tk.Tk()
-        root.withdraw()
-        
-        file_path = filedialog.asksaveasfilename(
-            title=DIALOG_TITLE_SAVE_SCREENSHOT,
-            defaultextension=SCREENSHOT_DEFAULT_EXTENSION,
-            filetypes=SCREENSHOT_FILE_TYPES
-        )
-        
-        root.destroy()
+        if platform.system() == 'Darwin':  # macOS
+            file_path = self.native_macos_save_dialog(
+                DIALOG_TITLE_SAVE_SCREENSHOT,
+                SCREENSHOT_DEFAULT_EXTENSION,
+                SCREENSHOT_FILE_TYPES
+            )
+        else:
+            # Fallback to tkinter for other platforms
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            file_path = filedialog.asksaveasfilename(
+                title=DIALOG_TITLE_SAVE_SCREENSHOT,
+                defaultextension=SCREENSHOT_DEFAULT_EXTENSION,
+                filetypes=SCREENSHOT_FILE_TYPES
+            )
+            root.destroy()
         
         if file_path:
             try:

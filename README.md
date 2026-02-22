@@ -41,6 +41,10 @@ Displays comprehensive mesh statistics in the console:
 - Export formats: **PNG**, **JPEG**, **PDF**
 - File dialog for save location selection
 
+### Platform Dialogs
+- Native macOS open/save dialogs via `osascript`
+- Tk-based file dialogs as a cross-platform fallback
+
 ## Keyboard Controls
 
 | Key | Action | Description |
