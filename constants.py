@@ -54,7 +54,8 @@ COLOR_SCHEME_DARK = {
     'intersected': (1.0, 0.5, 0.0),  # Orange
     'face_normals': (0.2, 0.8, 0.2),  # Green
     'vertex_normals': (0.2, 0.6, 1.0),  # Blue
-    'point_cloud': (1.0, 1.0, 0.0)  # Yellow
+    'point_cloud': (1.0, 1.0, 0.0),  # Yellow
+    'point_cloud_normals': (1.0, 0.0, 1.0)  # Magenta
 }
 
 COLOR_SCHEME_LIGHT = {
@@ -65,7 +66,8 @@ COLOR_SCHEME_LIGHT = {
     'intersected': (1.0, 0.5, 0.0),  # Orange
     'face_normals': (0.0, 0.6, 0.0),  # Dark green
     'vertex_normals': (0.0, 0.4, 0.8),  # Dark blue
-    'point_cloud': (0.8, 0.8, 0.0)  # Dark yellow
+    'point_cloud': (0.8, 0.8, 0.0),  # Dark yellow
+    'point_cloud_normals': (1.0, 0.0, 1.0)  # Magenta
 }
 
 # Default Initial Values
@@ -74,6 +76,7 @@ DEFAULT_SHOW_INTERSECTED = False
 DEFAULT_SHOW_FACE_NORMALS = False
 DEFAULT_SHOW_VERTEX_NORMALS = False
 DEFAULT_SHOW_POINT_CLOUD = False
+DEFAULT_SHOW_POINT_CLOUD_NORMALS = False
 DEFAULT_COLOR_THEME = THEME_DARK
 
 # Camera Defaults
