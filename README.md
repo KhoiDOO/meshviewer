@@ -21,6 +21,7 @@ A powerful 3D mesh visualization and analysis tool built with OpenGL and Python.
 - **Face Normals Display**: Visualize per-face normal vectors (green)
 - **Vertex Normals Display**: Visualize per-vertex normal vectors (blue)
 - **Point Cloud View**: Sample-based point cloud representation (yellow)
+- **Point Cloud Normals Display**: Visualize normals at sampled point cloud positions (magenta)
 
 ### Mesh Information Display
 Displays comprehensive mesh statistics in the console:
@@ -57,6 +58,7 @@ Displays comprehensive mesh statistics in the console:
 | **N** | Toggle Face Normals | Show/hide per-face normal vectors (green) |
 | **M** | Toggle Vertex Normals | Show/hide per-vertex normal vectors (blue) |
 | **P** | Toggle Point Cloud | Show/hide sampled point cloud (yellow, 8192 points) |
+| **Y** | Toggle Point Cloud Normals | Show/hide point cloud normal vectors (magenta) |
 | **U** | Toggle Color Theme | Switch between dark and light theme |
 | **C** | Capture Screenshot | Save current view as PNG/JPEG/PDF |
 | **SPACE** | Toggle Camera Rotation | Switch between automatic rotation and manual control |
@@ -79,12 +81,21 @@ Displays comprehensive mesh statistics in the console:
 - OpenGL-capable graphics card
 
 ### Setup
+
+**Platform-Specific Environment Setup:**
+
 ```bash
-# Create conda environment
-conda env create -f environment.yml
+# For macOS
+conda env create -f env_yaml/mac_env.yml
 conda activate meshviewer
 
-# Or install dependencies manually
+# For Windows
+conda env create -f env_yaml/win_env.yml
+conda activate meshviewer
+```
+
+**Or install dependencies manually:**
+```bash
 pip install glfw PyOpenGL numpy pyrr pillow trimesh python-fcl colorama
 ```
 
@@ -97,12 +108,14 @@ python main.py
 1. Press **O** to open a mesh file
 2. Use **J/K/L** to switch between rendering modes
 3. Press **I** to highlight any self-intersecting faces
-4. Press **N/M** to visualize normals
-5. Press **U** to toggle between dark and light themes
-6. Press **C** to save a screenshot
-7. Check the console for detailed mesh analysis
-8. Use **W/A/S/D/Q/E** to rotate the object and **Z/X** to scale
-9. Use **↑/↓** arrow keys to adjust camera height
+4. Press **N/M** to visualize face/vertex normals
+5. Press **P** to toggle point cloud visualization
+6. Press **Y** to toggle point cloud normals display
+7. Press **U** to toggle between dark and light themes
+8. Press **C** to save a screenshot
+9. Check the console for detailed mesh analysis
+10. Use **W/A/S/D/Q/E** to rotate the object and **Z/X** to scale
+11. Use **↑/↓** arrow keys to adjust camera height
 
 ## Technical Details
 
