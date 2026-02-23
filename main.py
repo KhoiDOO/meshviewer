@@ -36,6 +36,7 @@ from constants import (
     DEFAULT_SHOW_FACE_NORMALS,
     DEFAULT_SHOW_VERTEX_NORMALS,
     DEFAULT_SHOW_POINT_CLOUD,
+    DEFAULT_SHOW_POINT_CLOUD_NORMALS,
     DEFAULT_COLOR_THEME,
     DEFAULT_CAMERA_ROTATING,
     DEFAULT_CAMERA_ANGLE,
@@ -83,6 +84,7 @@ class MeshViewer:
         self.show_face_normals = DEFAULT_SHOW_FACE_NORMALS
         self.show_vertex_normals = DEFAULT_SHOW_VERTEX_NORMALS
         self.show_point_cloud = DEFAULT_SHOW_POINT_CLOUD
+        self.show_point_cloud_normals = DEFAULT_SHOW_POINT_CLOUD_NORMALS
 
         self.color_theme = DEFAULT_COLOR_THEME
 
@@ -112,6 +114,7 @@ class MeshViewer:
         self.last_n_state = glfw.RELEASE
         self.last_m_state = glfw.RELEASE
         self.last_p_state = glfw.RELEASE
+        self.last_y_state = glfw.RELEASE
         self.last_c_state = glfw.RELEASE
         self.last_u_state = glfw.RELEASE
         self.last_space_state = glfw.RELEASE
@@ -168,6 +171,11 @@ class MeshViewer:
         self.point_cloud_vao = glGenVertexArrays(1)
         self.point_cloud_vbo = glGenBuffers(1)
         self.point_cloud_count = 0
+
+        # Point Cloud Normals Buffer (lines)
+        self.point_cloud_normals_vao = glGenVertexArrays(1)
+        self.point_cloud_normals_vbo = glGenBuffers(1)
+        self.point_cloud_normals_count = 0
 
         self.index_count = 0
 
@@ -317,7 +325,10 @@ class MeshViewer:
             self.normal_length = max(self.diag * NORMAL_LENGTH_FACTOR, NORMAL_LENGTH_MIN)
 
             # Sample points for point cloud visualization (if needed)
-            self.points: np.ndarray = mesh.sample(POINT_CLOUD_SAMPLE_COUNT)
+            self.points: np.ndarray = None
+            self.point_normals: np.ndarray = None
+            self.points, face_idx = mesh.sample(POINT_CLOUD_SAMPLE_COUNT, return_index=True)
+            self.point_normals = mesh.face_normals[face_idx]
             
             self.update_gpu_buffers()
 
@@ -344,7 +355,9 @@ class MeshViewer:
         # 3. Prepare Normals
         self.face_normals_count = self.setup_face_normals_buffer()
         self.vertex_normals_count = self.setup_vertex_normals_buffer()
-        self.point_cloud_count = self.setup_point_cloud_buffer()
+
+        # 4. Prepare Point Cloud
+        self.point_cloud_count, self.point_cloud_normals_count = self.setup_point_cloud_buffer()
 
     def setup_buffer(self, vao, vbo, ebo, faces):
         if len(faces) == 0: return 0
@@ -388,7 +401,25 @@ class MeshViewer:
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
         glEnableVertexAttribArray(1)
 
-        return points.shape[0]
+        # 4. Prepare Point Cloud Normals
+        normals = self.point_normals
+        line_verts = np.empty((points.shape[0] * 2, 3), dtype=np.float32)
+        line_verts[0::2] = points
+        line_verts[1::2] = points + normals * self.normal_length
+
+        colors = np.full((line_verts.shape[0], 3), colors_scheme['point_cloud_normals'], dtype=np.float32)
+        data = np.hstack((line_verts, colors)).astype(np.float32)
+
+        glBindVertexArray(self.point_cloud_normals_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.point_cloud_normals_vbo)
+        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
+        glEnableVertexAttribArray(1)
+
+        return points.shape[0], line_verts.shape[0]
 
     def setup_face_normals_buffer(self):
         colors_scheme = self.get_color_scheme()
@@ -484,6 +515,12 @@ class MeshViewer:
         if p_state == glfw.PRESS and self.last_p_state == glfw.RELEASE:
             self.show_point_cloud = not self.show_point_cloud
         self.last_p_state = p_state
+
+        # Handle 'Y' for point cloud normals
+        y_state = glfw.get_key(self.window, glfw.KEY_Y)
+        if y_state == glfw.PRESS and self.last_y_state == glfw.RELEASE:
+            self.show_point_cloud_normals = not self.show_point_cloud_normals
+        self.last_y_state = y_state
 
         # Handle 'O' for Open
         o_state = glfw.get_key(self.window, glfw.KEY_O)
@@ -647,6 +684,11 @@ class MeshViewer:
             glBindVertexArray(self.point_cloud_vao)
             glUniform3f(self.override_loc, *colors_scheme['point_cloud'])
             glDrawArrays(GL_POINTS, 0, self.point_cloud_count)
+
+        if self.show_point_cloud_normals and self.point_cloud_normals_count > 0:
+            glBindVertexArray(self.point_cloud_normals_vao)
+            glUniform3f(self.override_loc, *colors_scheme['point_cloud_normals'])
+            glDrawArrays(GL_LINES, 0, self.point_cloud_normals_count)
 
     def run(self):
         while not glfw.window_should_close(self.window):
