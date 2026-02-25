@@ -22,13 +22,15 @@ A powerful 3D mesh visualization and analysis tool built with OpenGL and Python.
 - **Vertex Normals Display**: Visualize per-vertex normal vectors (blue)
 - **Point Cloud View**: Sample-based point cloud representation (yellow)
 - **Point Cloud Normals Display**: Visualize normals at sampled point cloud positions (magenta)
+- **Non-Manifold Edges Display**: Highlight edges shared by more than two faces
+- **Non-Manifold Vertices Display**: Highlight vertices with invalid local topology
 
 ### Mesh Information Display
 Displays comprehensive mesh statistics in the console:
 - **Statistics**: Vertex/face/edge count, genus, component count
 - **Properties**: Watertight, manifold, convex, winding consistency, self-intersection status
 - **Analysis**: Area, volume, bounds, center of mass, extents
-- **Edge Info**: Internal/boundary edges, connectivity stats, edge lengths, aspect ratio
+- **Edge Info**: Internal/boundary/non-manifold edges, non-manifold vertices, connectivity stats, edge lengths, aspect ratio
 - **Face Info**: Intersected faces, degenerate faces
 
 ### Color Themes
@@ -59,6 +61,8 @@ Displays comprehensive mesh statistics in the console:
 | **M** | Toggle Vertex Normals | Show/hide per-vertex normal vectors (blue) |
 | **P** | Toggle Point Cloud | Show/hide sampled point cloud (yellow, 8192 points) |
 | **Y** | Toggle Point Cloud Normals | Show/hide point cloud normal vectors (magenta) |
+| **H** | Toggle Non-Manifold Edges | Show/hide non-manifold edge highlights |
+| **V** | Toggle Non-Manifold Vertices | Show/hide non-manifold vertex highlights |
 | **U** | Toggle Color Theme | Switch between dark and light theme |
 | **C** | Capture Screenshot | Save current view as PNG/JPEG/PDF |
 | **SPACE** | Toggle Camera Rotation | Switch between automatic rotation and manual control |
@@ -111,11 +115,20 @@ python main.py
 4. Press **N/M** to visualize face/vertex normals
 5. Press **P** to toggle point cloud visualization
 6. Press **Y** to toggle point cloud normals display
-7. Press **U** to toggle between dark and light themes
-8. Press **C** to save a screenshot
-9. Check the console for detailed mesh analysis
-10. Use **W/A/S/D/Q/E** to rotate the object and **Z/X** to scale
-11. Use **↑/↓** arrow keys to adjust camera height
+7. Press **H** to toggle non-manifold edge display
+8. Press **V** to toggle non-manifold vertex display
+9. Press **U** to toggle between dark and light themes
+10. Press **C** to save a screenshot
+11. Check the console for detailed mesh analysis
+12. Use **W/A/S/D/Q/E** to rotate the object and **Z/X** to scale
+13. Use **↑/↓** arrow keys to adjust camera height
+
+## Sample Meshes
+
+The samples folder includes test meshes with known topology:
+- `samples/(non self-intersected) dumbbel.obj`
+- `samples/(non-manifold edge) dolphin.obj`
+- `samples/(self-intersected) hammer.obj`
 
 ## Technical Details
 
