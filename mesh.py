@@ -33,6 +33,15 @@ class MeshInfo:
         self.vertex_connectivity = np.bincount(self.edges_unique.flatten(), minlength=len(mesh.vertices))
         self.edges_unique_length: np.ndarray
         self.edges_unique_length = self.mesh.edges_unique_length
+        
+        # Identify non-manifold edges (edges shared by more than 2 faces)
+        self.nonmanifold_edge_mask = self.edges_counts != 2
+        self.nonmanifold_edges = self.edges_unique[self.nonmanifold_edge_mask]
+        self.num_nonmanifold_edges = np.sum(self.nonmanifold_edge_mask).item()
+        
+        # Identify non-manifold vertices using comprehensive topology check
+        self.nonmanifold_vertices = get_nonmanifold_vertices(mesh)
+        self.num_nonmanifold_vertices = len(self.nonmanifold_vertices)
 
         self.nondegenerate_faces_mask = mesh.nondegenerate_faces()
         self.num_degenerate_faces = np.sum(~self.nondegenerate_faces_mask).item()
@@ -82,6 +91,8 @@ class MeshInfo:
         self.edges_info = {
             "#internal_edges": np.sum(self.edges_counts == 2).item(),
             "#boundary_edges": np.sum(self.edges_counts == 1).item(),
+            "#nonmanifold_edges": self.num_nonmanifold_edges,
+            "#nonmanifold_vertices": self.num_nonmanifold_vertices,
             "min_connectivity": int(self.vertex_connectivity.min()),
             "max_connectivity": int(self.vertex_connectivity.max()),
             "avg_connectivity": float(self.vertex_connectivity.mean()),
@@ -172,9 +183,12 @@ class MeshInfo:
         
         # Edges Info - group min/max pairs
         info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Edges Info:{Style.RESET_ALL}\n"
-        info_str += f"  {Fore.CYAN}{'#internal / #boundary edges':.<{FORMAT_LABEL_WIDTH}}{Style.RESET_ALL} "
+        info_str += f"  {Fore.CYAN}{'#internal / #boundary / #nonmanifold':.<{FORMAT_LABEL_WIDTH}}{Style.RESET_ALL} "
         info_str += f"{format_value(self.edges_info['#internal_edges'])} / "
-        info_str += f"{format_value(self.edges_info['#boundary_edges'])}\n"
+        info_str += f"{format_value(self.edges_info['#boundary_edges'])} / "
+        info_str += f"{format_value(self.edges_info['#nonmanifold_edges'])}\n"
+        
+        info_str += f"  {Fore.CYAN}{'#nonmanifold_vertices':.<{FORMAT_LABEL_WIDTH}}{Style.RESET_ALL} {format_value(self.edges_info['#nonmanifold_vertices'])}\n"
         
         info_str += f"  {Fore.CYAN}{'min / max / avg connectivity':.<{FORMAT_LABEL_WIDTH}}{Style.RESET_ALL} "
         info_str += f"{format_value(self.edges_info['min_connectivity'])} / "
@@ -302,3 +316,67 @@ def get_intersected_tria_ids(mesh: trimesh.Trimesh):
             intersected_ids.add(id2)
 
     return list(intersected_ids)
+
+
+def get_nonmanifold_vertices(mesh: trimesh.Trimesh) -> np.ndarray:
+    """
+    Detect non-manifold vertices by checking local topology.
+    
+    A vertex is non-manifold if:
+    1. It's part of a non-manifold edge (shared by >2 faces)
+    2. Its adjacent faces don't form a single connected component (multiple wings)
+    3. The edges around it form multiple disconnected regions
+    
+    Parameters:
+    mesh (trimesh.Trimesh): The input mesh
+    
+    Returns:
+    np.ndarray: Array of non-manifold vertex indices
+    """
+    nonmanifold_vertices = set()
+    
+    # First, collect vertices on non-manifold edges
+    edges_unique, edges_counts = np.unique(mesh.edges_sorted, axis=0, return_counts=True)
+    nonmanifold_edge_mask = edges_counts > 2
+    if np.any(nonmanifold_edge_mask):
+        nonmanifold_edge_vertices = edges_unique[nonmanifold_edge_mask].flatten()
+        nonmanifold_vertices.update(nonmanifold_edge_vertices)
+    
+    # Build face adjacency lookup for each vertex
+    # For each vertex, get all adjacent faces and check if they form a single connected component
+    for vertex_idx in range(len(mesh.vertices)):
+        # Get all faces adjacent to this vertex
+        adjacent_faces = np.where(np.any(mesh.faces == vertex_idx, axis=1))[0]
+        
+        if len(adjacent_faces) < 2:
+            continue
+        
+        # Build adjacency graph using mesh.face_adjacency
+        face_to_index = {old_idx: new_idx for new_idx, old_idx in enumerate(adjacent_faces)}
+        adjacency_graph = {i: [] for i in range(len(adjacent_faces))}
+        
+        # For each pair in face_adjacency, check if both faces contain vertex_idx
+        for face_pair in mesh.face_adjacency:
+            if face_pair[0] in face_to_index and face_pair[1] in face_to_index:
+                i = face_to_index[face_pair[0]]
+                j = face_to_index[face_pair[1]]
+                adjacency_graph[i].append(j)
+                adjacency_graph[j].append(i)
+        
+        # Check if all faces form a single connected component
+        visited = set()
+        stack = [0]
+        visited.add(0)
+        
+        while stack:
+            current = stack.pop()
+            for neighbor in adjacency_graph[current]:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        
+        # If not all faces are connected, vertex is non-manifold
+        if len(visited) != len(adjacent_faces):
+            nonmanifold_vertices.add(vertex_idx)
+    
+    return np.array(sorted(list(nonmanifold_vertices)), dtype=np.int32)
