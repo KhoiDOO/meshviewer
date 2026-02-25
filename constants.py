@@ -5,10 +5,12 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aColor;
 
 uniform mat4 mvp;
+uniform float pointSize;
 out vec3 vColor;
 
 void main() {
     gl_Position = mvp * vec4(aPos, 1.0);
+    gl_PointSize = pointSize;
     vColor = aColor;
 }
 """
@@ -55,7 +57,9 @@ COLOR_SCHEME_DARK = {
     'face_normals': (0.2, 0.8, 0.2),  # Green
     'vertex_normals': (0.2, 0.6, 1.0),  # Blue
     'point_cloud': (1.0, 1.0, 0.0),  # Yellow
-    'point_cloud_normals': (1.0, 0.0, 1.0)  # Magenta
+    'point_cloud_normals': (1.0, 0.0, 1.0),  # Magenta
+    'nonmanifold_edges': (1.0, 0.0, 0.0),  # Red
+    'nonmanifold_vertices': (0.0, 1.0, 1.0)  # Cyan
 }
 
 COLOR_SCHEME_LIGHT = {
@@ -67,7 +71,9 @@ COLOR_SCHEME_LIGHT = {
     'face_normals': (0.0, 0.6, 0.0),  # Dark green
     'vertex_normals': (0.0, 0.4, 0.8),  # Dark blue
     'point_cloud': (0.8, 0.8, 0.0),  # Dark yellow
-    'point_cloud_normals': (1.0, 0.0, 1.0)  # Magenta
+    'point_cloud_normals': (1.0, 0.0, 1.0),  # Magenta
+    'nonmanifold_edges': (0.8, 0.0, 0.0),  # Dark red
+    'nonmanifold_vertices': (0.0, 0.8, 0.8)  # Dark cyan
 }
 
 # Default Initial Values
@@ -77,6 +83,8 @@ DEFAULT_SHOW_FACE_NORMALS = False
 DEFAULT_SHOW_VERTEX_NORMALS = False
 DEFAULT_SHOW_POINT_CLOUD = False
 DEFAULT_SHOW_POINT_CLOUD_NORMALS = False
+DEFAULT_SHOW_NONMANIFOLD_EDGES = False
+DEFAULT_SHOW_NONMANIFOLD_VERTICES = False
 DEFAULT_COLOR_THEME = THEME_DARK
 
 # Camera Defaults
@@ -120,6 +128,10 @@ VERTEX_STRIDE = 24  # Size in bytes: Pos(3*4) + Color(3*4)
 COLOR_OFFSET = 12  # Offset to color data in vertex buffer
 POLYGON_OFFSET_FACTOR = 1.0
 POLYGON_OFFSET_UNITS = 1.0
+
+# Point Size Settings
+NONMANIFOLD_VERTEX_POINT_SIZE = 10.0  # Size of non-manifold vertex points
+POINT_CLOUD_POINT_SIZE = 3.0  # Size of point cloud points
 
 # Input/Timing
 ASSUMED_FPS = 60.0
