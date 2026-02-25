@@ -13,66 +13,9 @@ from PIL import Image
 
 import trimesh
 
-from mesh import (
-    load_mesh,
-    MeshInfo
-)
+from mesh import load_mesh, MeshInfo
 
-from constants import (
-    VERTEX_SHADER,
-    FRAGMENT_SHADER,
-    WINDOW_WIDTH,
-    WINDOW_HEIGHT,
-    WINDOW_TITLE,
-    MODE_SOLID,
-    MODE_WIREFRAME,
-    MODE_BOTH,
-    THEME_DARK,
-    THEME_LIGHT,
-    COLOR_SCHEME_DARK,
-    COLOR_SCHEME_LIGHT,
-    DEFAULT_MODE,
-    DEFAULT_SHOW_INTERSECTED,
-    DEFAULT_SHOW_FACE_NORMALS,
-    DEFAULT_SHOW_VERTEX_NORMALS,
-    DEFAULT_SHOW_POINT_CLOUD,
-    DEFAULT_SHOW_POINT_CLOUD_NORMALS,
-    DEFAULT_COLOR_THEME,
-    DEFAULT_CAMERA_ROTATING,
-    DEFAULT_CAMERA_ANGLE,
-    DEFAULT_CAMERA_VERTICAL_ANGLE,
-    DEFAULT_CAMERA_DISTANCE,
-    DEFAULT_CAMERA_HEIGHT,
-    DEFAULT_CAMERA_ROTATION_SPEED,
-    DEFAULT_CAMERA_MANUAL_SPEED,
-    DEFAULT_CAMERA_HEIGHT_SPEED,
-    DEFAULT_OBJECT_ROTATION_X,
-    DEFAULT_OBJECT_ROTATION_Y,
-    DEFAULT_OBJECT_ROTATION_Z,
-    DEFAULT_OBJECT_ROTATION_SPEED,
-    DEFAULT_OBJECT_SCALE,
-    DEFAULT_OBJECT_SCALE_SPEED,
-    NORMAL_LENGTH_FACTOR,
-    NORMAL_LENGTH_MIN,
-    POINT_CLOUD_SAMPLE_COUNT,
-    CAMERA_FOV,
-    CAMERA_NEAR_PLANE,
-    CAMERA_FAR_PLANE,
-    CAMERA_HEIGHT_MIN,
-    CAMERA_HEIGHT_MAX,
-    OBJECT_SCALE_MIN,
-    OBJECT_SCALE_MAX,
-    VERTEX_STRIDE,
-    COLOR_OFFSET,
-    POLYGON_OFFSET_FACTOR,
-    POLYGON_OFFSET_UNITS,
-    DELTA_TIME,
-    MESH_FILE_TYPES,
-    SCREENSHOT_FILE_TYPES,
-    SCREENSHOT_DEFAULT_EXTENSION,
-    DIALOG_TITLE_SELECT_MESH,
-    DIALOG_TITLE_SAVE_SCREENSHOT
-)
+from constants import *
 
 class MeshViewer:
     def __init__(self):
@@ -85,6 +28,8 @@ class MeshViewer:
         self.show_vertex_normals = DEFAULT_SHOW_VERTEX_NORMALS
         self.show_point_cloud = DEFAULT_SHOW_POINT_CLOUD
         self.show_point_cloud_normals = DEFAULT_SHOW_POINT_CLOUD_NORMALS
+        self.show_nonmanifold_edges = DEFAULT_SHOW_NONMANIFOLD_EDGES
+        self.show_nonmanifold_vertices = DEFAULT_SHOW_NONMANIFOLD_VERTICES
 
         self.color_theme = DEFAULT_COLOR_THEME
 
@@ -117,6 +62,8 @@ class MeshViewer:
         self.last_y_state = glfw.RELEASE
         self.last_c_state = glfw.RELEASE
         self.last_u_state = glfw.RELEASE
+        self.last_h_state = glfw.RELEASE
+        self.last_v_state = glfw.RELEASE
         self.last_space_state = glfw.RELEASE
         self.last_r_state = glfw.RELEASE
 
@@ -144,6 +91,9 @@ class MeshViewer:
             compileShader(VERTEX_SHADER, GL_VERTEX_SHADER),
             compileShader(FRAGMENT_SHADER, GL_FRAGMENT_SHADER)
         )
+        
+        # Enable programmatically set point sizes
+        glEnable(GL_PROGRAM_POINT_SIZE)
 
         # Main Buffer
         self.main_vao = glGenVertexArrays(1)
@@ -177,11 +127,22 @@ class MeshViewer:
         self.point_cloud_normals_vbo = glGenBuffers(1)
         self.point_cloud_normals_count = 0
 
+        # Non-manifold Edges Buffer (lines)
+        self.nonmanifold_edges_vao = glGenVertexArrays(1)
+        self.nonmanifold_edges_vbo = glGenBuffers(1)
+        self.nonmanifold_edges_count = 0
+
+        # Non-manifold Vertices Buffer (points)
+        self.nonmanifold_vertices_vao = glGenVertexArrays(1)
+        self.nonmanifold_vertices_vbo = glGenBuffers(1)
+        self.nonmanifold_vertices_count = 0
+
         self.index_count = 0
 
         self.mvp_loc = glGetUniformLocation(self.shader, "mvp")
         self.override_loc = glGetUniformLocation(self.shader, "overrideColor")
         self.use_override_loc = glGetUniformLocation(self.shader, "useOverride")
+        self.point_size_loc = glGetUniformLocation(self.shader, "pointSize")
 
     def native_macos_open_dialog(self, title, file_types):
         """Show native macOS file open dialog using osascript."""
@@ -359,6 +320,12 @@ class MeshViewer:
         # 4. Prepare Point Cloud
         self.point_cloud_count, self.point_cloud_normals_count = self.setup_point_cloud_buffer()
 
+        # 5. Prepare Non-manifold Edges
+        self.nonmanifold_edges_count = self.setup_nonmanifold_edges_buffer()
+
+        # 6. Prepare Non-manifold Vertices
+        self.nonmanifold_vertices_count = self.setup_nonmanifold_vertices_buffer()
+
     def setup_buffer(self, vao, vbo, ebo, faces):
         if len(faces) == 0: return 0
         
@@ -472,6 +439,67 @@ class MeshViewer:
 
         return line_verts.shape[0]
 
+    def setup_nonmanifold_edges_buffer(self):
+        """Setup buffer for non-manifold edges visualization."""
+        if not hasattr(self.mesh_info, 'nonmanifold_edges') or len(self.mesh_info.nonmanifold_edges) == 0:
+            return 0
+        
+        colors_scheme = self.get_color_scheme()
+        
+        # Get vertex positions for each non-manifold edge
+        nonmanifold_edges = self.mesh_info.nonmanifold_edges
+        verts = self.mesh.vertices
+        
+        # Create line vertices (start and end point for each edge)
+        line_verts = np.empty((nonmanifold_edges.shape[0] * 2, 3), dtype=np.float32)
+        line_verts[0::2] = verts[nonmanifold_edges[:, 0]]  # Start points
+        line_verts[1::2] = verts[nonmanifold_edges[:, 1]]  # End points
+        
+        colors = np.full((line_verts.shape[0], 3), colors_scheme['nonmanifold_edges'], dtype=np.float32)
+        data = np.hstack((line_verts, colors)).astype(np.float32)
+
+        glBindVertexArray(self.nonmanifold_edges_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.nonmanifold_edges_vbo)
+        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
+        glEnableVertexAttribArray(1)
+
+        return line_verts.shape[0]
+
+    def setup_nonmanifold_vertices_buffer(self):
+        """Setup buffer for non-manifold vertices visualization."""
+        if not hasattr(self.mesh_info, 'nonmanifold_vertices') or len(self.mesh_info.nonmanifold_vertices) == 0:
+            print(f"[DEBUG] No non-manifold vertices found")
+            return 0
+        
+        colors_scheme = self.get_color_scheme()
+        
+        # Get vertex positions for non-manifold vertices
+        nonmanifold_vertices = self.mesh_info.nonmanifold_vertices
+        verts = self.mesh.vertices
+        
+        print(f"[DEBUG] Setting up {len(nonmanifold_vertices)} non-manifold vertices for rendering")
+        
+        # Get positions of non-manifold vertices
+        vertex_positions = verts[nonmanifold_vertices]
+        
+        colors = np.full((vertex_positions.shape[0], 3), colors_scheme['nonmanifold_vertices'], dtype=np.float32)
+        data = np.hstack((vertex_positions, colors)).astype(np.float32)
+
+        glBindVertexArray(self.nonmanifold_vertices_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.nonmanifold_vertices_vbo)
+        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
+        glEnableVertexAttribArray(1)
+
+        return vertex_positions.shape[0]
+
     def handle_input(self):
 
         # Handle 'I' for toggling intersected faces
@@ -521,6 +549,20 @@ class MeshViewer:
         if y_state == glfw.PRESS and self.last_y_state == glfw.RELEASE:
             self.show_point_cloud_normals = not self.show_point_cloud_normals
         self.last_y_state = y_state
+
+        # Handle 'H' for non-manifold edges
+        h_state = glfw.get_key(self.window, glfw.KEY_H)
+        if h_state == glfw.PRESS and self.last_h_state == glfw.RELEASE:
+            self.show_nonmanifold_edges = not self.show_nonmanifold_edges
+        self.last_h_state = h_state
+
+        # Handle 'V' for non-manifold vertices
+        v_state = glfw.get_key(self.window, glfw.KEY_V)
+        if v_state == glfw.PRESS and self.last_v_state == glfw.RELEASE:
+            self.show_nonmanifold_vertices = not self.show_nonmanifold_vertices
+            status = "ON" if self.show_nonmanifold_vertices else "OFF"
+            print(f"Non-manifold vertices: {status} (count: {self.nonmanifold_vertices_count})")
+        self.last_v_state = v_state
 
         # Handle 'O' for Open
         o_state = glfw.get_key(self.window, glfw.KEY_O)
@@ -683,12 +725,30 @@ class MeshViewer:
         if self.show_point_cloud and self.point_cloud_count > 0:
             glBindVertexArray(self.point_cloud_vao)
             glUniform3f(self.override_loc, *colors_scheme['point_cloud'])
+            glUniform1f(self.point_size_loc, POINT_CLOUD_POINT_SIZE)
             glDrawArrays(GL_POINTS, 0, self.point_cloud_count)
 
         if self.show_point_cloud_normals and self.point_cloud_normals_count > 0:
             glBindVertexArray(self.point_cloud_normals_vao)
             glUniform3f(self.override_loc, *colors_scheme['point_cloud_normals'])
             glDrawArrays(GL_LINES, 0, self.point_cloud_normals_count)
+
+        if self.show_nonmanifold_edges and self.nonmanifold_edges_count > 0:
+            # Render non-manifold edges on top without depth testing
+            glDisable(GL_DEPTH_TEST)
+            glBindVertexArray(self.nonmanifold_edges_vao)
+            glUniform3f(self.override_loc, *colors_scheme['nonmanifold_edges'])
+            glDrawArrays(GL_LINES, 0, self.nonmanifold_edges_count)
+            glEnable(GL_DEPTH_TEST)
+
+        if self.show_nonmanifold_vertices and self.nonmanifold_vertices_count > 0:
+            # Render non-manifold vertices as points on top
+            glDisable(GL_DEPTH_TEST)
+            glBindVertexArray(self.nonmanifold_vertices_vao)
+            glUniform3f(self.override_loc, *colors_scheme['nonmanifold_vertices'])
+            glUniform1f(self.point_size_loc, NONMANIFOLD_VERTEX_POINT_SIZE)
+            glDrawArrays(GL_POINTS, 0, self.nonmanifold_vertices_count)
+            glEnable(GL_DEPTH_TEST)
 
     def run(self):
         while not glfw.window_should_close(self.window):
