@@ -6,6 +6,8 @@ A powerful 3D mesh visualization and analysis tool built with OpenGL and Python.
 
 ### Mesh Loading & Formats
 - Support for multiple 3D mesh formats: **OBJ**, **STL**, **PLY**, **GLB**, **OFF**
+- **Multi-mesh loading**: Load and compare multiple meshes simultaneously
+- Automatic grid layout for multiple meshes with adjustable spacing
 - Automatic mesh normalization and centering
 - Scene concatenation for multi-object files
 
@@ -52,7 +54,7 @@ Displays comprehensive mesh statistics in the console:
 
 | Key | Action | Description |
 |-----|--------|-------------|
-| **O** | Open File | Open file dialog to load a mesh file |
+| **O** | Open File | Open file dialog to load mesh file(s) - supports multiple selection |
 | **J** | Solid Mode | Render mesh with filled polygons |
 | **K** | Wireframe Mode | Render mesh with edges only |
 | **L** | Combined Mode | Render both solid and wireframe |
@@ -75,6 +77,8 @@ Displays comprehensive mesh statistics in the console:
 | **E** | Roll Object Right | Roll object right (Z axis) |
 | **Z** | Scale Down | Scale object down |
 | **X** | Scale Up | Scale object up |
+| **[** | Decrease Layout Spacing | Reduce spacing between meshes in multi-mesh view |
+| **]** | Increase Layout Spacing | Increase spacing between meshes in multi-mesh view |
 | **↑** | Move Camera Up | Increase camera height |
 | **↓** | Move Camera Down | Decrease camera height |
 
@@ -109,7 +113,7 @@ pip install glfw PyOpenGL numpy pyrr pillow trimesh python-fcl colorama
 python main.py
 ```
 
-1. Press **O** to open a mesh file
+1. Press **O** to open mesh file(s) - select multiple files to compare meshes side-by-side
 2. Use **J/K/L** to switch between rendering modes
 3. Press **I** to highlight any self-intersecting faces
 4. Press **N/M** to visualize face/vertex normals
@@ -117,18 +121,30 @@ python main.py
 6. Press **Y** to toggle point cloud normals display
 7. Press **H** to toggle non-manifold edge display
 8. Press **V** to toggle non-manifold vertex display
-9. Press **U** to toggle between dark and light themes
-10. Press **C** to save a screenshot
-11. Check the console for detailed mesh analysis
-12. Use **W/A/S/D/Q/E** to rotate the object and **Z/X** to scale
-13. Use **↑/↓** arrow keys to adjust camera height
+9. Press **[/]** to adjust spacing between meshes (when multiple meshes loaded)
+10. Press **U** to toggle between dark and light themes
+11. Press **C** to save a screenshot
+12. Check the console for detailed mesh analysis
+13. Use **W/A/S/D/Q/E** to rotate the object and **Z/X** to scale
+14. Use **↑/↓** arrow keys to adjust camera height
 
 ## Sample Meshes
 
-The samples folder includes test meshes with known topology:
-- `samples/(non self-intersected) dumbbel.obj`
-- `samples/(non-manifold edge) dolphin.obj`
-- `samples/(self-intersected) hammer.obj`
+The `samples/` folder includes test meshes with known topology issues for testing and demonstration:
+
+- **`(non self-intersected) dumbbel.obj`** - Clean manifold mesh without self-intersections
+  - Use to verify proper handling of valid meshes
+  - All topology checks should pass
+
+- **`(non-manifold edge) dolphin.obj`** - Contains non-manifold edges
+  - Press **H** to highlight problematic edges
+  - Demonstrates edge-based topology violations
+
+- **`(self-intersected) hammer.obj`** - Contains self-intersecting faces
+  - Press **I** to highlight intersecting triangles
+  - Demonstrates FCL-based collision detection
+
+**Multi-Mesh Comparison**: Load all three samples together by selecting multiple files in the open dialog to compare their topology side-by-side.
 
 ## Technical Details
 
