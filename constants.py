@@ -109,6 +109,10 @@ DEFAULT_OBJECT_SCALE_SPEED = 0.2  # Units per second
 NORMAL_LENGTH_FACTOR = 0.02  # Factor of mesh diagonal
 NORMAL_LENGTH_MIN = 0.01  # Minimum normal length
 POINT_CLOUD_SAMPLE_COUNT = 8192
+MESH_LAYOUT_PADDING = 0.2  # Extra spacing between meshes in grid layout
+MESH_LAYOUT_PADDING_STEP = 0.1
+MESH_LAYOUT_PADDING_MIN = 0.0
+MESH_LAYOUT_PADDING_MAX = 5.0
 
 # Camera Projection
 CAMERA_FOV = 45.0  # Field of view in degrees
