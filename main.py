@@ -285,7 +285,6 @@ class MeshViewer:
         )
         self.mesh_buffers.append(mesh_buffer)
 
-        print(f"Loaded mesh: {path}")
         print(mesh_info)
 
     def layout_meshes(self):
@@ -377,9 +376,6 @@ class MeshViewer:
         v_state = glfw.get_key(self.window, glfw.KEY_V)
         if v_state == glfw.PRESS and self.last_v_state == glfw.RELEASE:
             self.show_nonmanifold_vertices = not self.show_nonmanifold_vertices
-            status = "ON" if self.show_nonmanifold_vertices else "OFF"
-            total_vertices = sum(buffer.nonmanifold_vertices_count for buffer in self.mesh_buffers)
-            print(f"Non-manifold vertices: {status} (count: {total_vertices})")
         self.last_v_state = v_state
 
         # Handle 'O' for Open
@@ -402,8 +398,6 @@ class MeshViewer:
                 colors_scheme = self.get_color_scheme()
                 for buffer in self.mesh_buffers:
                     buffer.refresh_colors(colors_scheme)
-            theme_name = "Light" if self.color_theme == THEME_LIGHT else "Dark"
-            print(f"Switched to {theme_name} theme")
         self.last_u_state = u_state
 
         # Handle [ and ] for layout spacing
@@ -414,7 +408,6 @@ class MeshViewer:
                 self.mesh_layout_padding - MESH_LAYOUT_PADDING_STEP,
             )
             self.layout_meshes()
-            print(f"Mesh spacing: {self.mesh_layout_padding:.2f}")
         self.last_left_bracket_state = left_bracket_state
 
         right_bracket_state = glfw.get_key(self.window, glfw.KEY_RIGHT_BRACKET)
@@ -424,15 +417,12 @@ class MeshViewer:
                 self.mesh_layout_padding + MESH_LAYOUT_PADDING_STEP,
             )
             self.layout_meshes()
-            print(f"Mesh spacing: {self.mesh_layout_padding:.2f}")
         self.last_right_bracket_state = right_bracket_state
 
         # Handle SPACE for toggling camera rotation
         space_state = glfw.get_key(self.window, glfw.KEY_SPACE)
         if space_state == glfw.PRESS and self.last_space_state == glfw.RELEASE:
             self.camera_rotating = not self.camera_rotating
-            status = "rotating" if self.camera_rotating else "static"
-            print(f"Camera: {status}")
         self.last_space_state = space_state
 
         # Handle R for reset camera
@@ -443,7 +433,6 @@ class MeshViewer:
             self.camera_vertical_angle = DEFAULT_CAMERA_VERTICAL_ANGLE
             self.camera_distance = DEFAULT_CAMERA_DISTANCE
             self.camera_height = DEFAULT_CAMERA_HEIGHT
-            print("Camera reset to default")
         self.last_r_state = r_state
 
         # Handle object rotation and zoom (always available)
