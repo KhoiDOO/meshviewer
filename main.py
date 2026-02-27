@@ -1,5 +1,6 @@
+import os
+
 import glfw
-import ctypes
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 
@@ -11,17 +12,15 @@ import subprocess
 import platform
 from PIL import Image
 
-import trimesh
-
 from mesh import load_mesh, MeshInfo
+from mesh_buffer import MeshBuffer
 
 from constants import *
 
 class MeshViewer:
     def __init__(self):
         self.mode = DEFAULT_MODE
-        self.mesh: trimesh.Trimesh = None
-        self.intersected_face_ids = None
+        self.mesh_buffers: list[MeshBuffer] = []
         
         self.show_intersected = DEFAULT_SHOW_INTERSECTED
         self.show_face_normals = DEFAULT_SHOW_FACE_NORMALS
@@ -50,6 +49,7 @@ class MeshViewer:
         self.object_rotation_speed = DEFAULT_OBJECT_ROTATION_SPEED
         self.object_scale = DEFAULT_OBJECT_SCALE
         self.object_scale_speed = DEFAULT_OBJECT_SCALE_SPEED
+        self.mesh_layout_padding = MESH_LAYOUT_PADDING
 
         self.last_o_state = glfw.RELEASE
         self.last_i_state = glfw.RELEASE
@@ -66,6 +66,8 @@ class MeshViewer:
         self.last_v_state = glfw.RELEASE
         self.last_space_state = glfw.RELEASE
         self.last_r_state = glfw.RELEASE
+        self.last_left_bracket_state = glfw.RELEASE
+        self.last_right_bracket_state = glfw.RELEASE
 
         if not glfw.init():
             raise Exception("GLFW could not be initialized!")
@@ -95,56 +97,12 @@ class MeshViewer:
         # Enable programmatically set point sizes
         glEnable(GL_PROGRAM_POINT_SIZE)
 
-        # Main Buffer
-        self.main_vao = glGenVertexArrays(1)
-        self.main_vbo = glGenBuffers(1)
-        self.main_ebo = glGenBuffers(1)
-        self.main_index_count = 0
-
-        # Intersected Faces Buffer
-        self.intersected_vao = glGenVertexArrays(1)
-        self.intersected_vbo = glGenBuffers(1)
-        self.intersected_ebo = glGenBuffers(1)
-        self.intersected_index_count = 0
-
-        # Face Normals Buffer (lines)
-        self.face_normals_vao = glGenVertexArrays(1)
-        self.face_normals_vbo = glGenBuffers(1)
-        self.face_normals_count = 0
-
-        # Vertex Normals Buffer (lines)
-        self.vertex_normals_vao = glGenVertexArrays(1)
-        self.vertex_normals_vbo = glGenBuffers(1)
-        self.vertex_normals_count = 0
-
-        # Point Cloud Buffer (points)
-        self.point_cloud_vao = glGenVertexArrays(1)
-        self.point_cloud_vbo = glGenBuffers(1)
-        self.point_cloud_count = 0
-
-        # Point Cloud Normals Buffer (lines)
-        self.point_cloud_normals_vao = glGenVertexArrays(1)
-        self.point_cloud_normals_vbo = glGenBuffers(1)
-        self.point_cloud_normals_count = 0
-
-        # Non-manifold Edges Buffer (lines)
-        self.nonmanifold_edges_vao = glGenVertexArrays(1)
-        self.nonmanifold_edges_vbo = glGenBuffers(1)
-        self.nonmanifold_edges_count = 0
-
-        # Non-manifold Vertices Buffer (points)
-        self.nonmanifold_vertices_vao = glGenVertexArrays(1)
-        self.nonmanifold_vertices_vbo = glGenBuffers(1)
-        self.nonmanifold_vertices_count = 0
-
-        self.index_count = 0
-
         self.mvp_loc = glGetUniformLocation(self.shader, "mvp")
         self.override_loc = glGetUniformLocation(self.shader, "overrideColor")
         self.use_override_loc = glGetUniformLocation(self.shader, "useOverride")
         self.point_size_loc = glGetUniformLocation(self.shader, "pointSize")
 
-    def native_macos_open_dialog(self, title, file_types):
+    def native_macos_open_dialog(self, title, file_types, allow_multiple=False):
         """Show native macOS file open dialog using osascript."""
         # Build file type filter for macOS
         extensions = []
@@ -156,9 +114,22 @@ class MeshViewer:
         
         if extensions:
             type_filter = ','.join(f'"{ext}"' for ext in extensions)
-            script = f'POSIX path of (choose file with prompt "{title}" of type {{{type_filter}}} without invisibles)'
+            chooser = f'choose file with prompt "{title}" of type {{{type_filter}}} without invisibles'
         else:
-            script = f'POSIX path of (choose file with prompt "{title}" without invisibles)'
+            chooser = f'choose file with prompt "{title}" without invisibles'
+
+        if allow_multiple:
+            chooser = f'{chooser} with multiple selections allowed'
+            script = (
+                'set theFiles to ' + chooser + '\n'
+                'set out to ""\n'
+                'repeat with f in theFiles\n'
+                'set out to out & (POSIX path of f) & linefeed\n'
+                'end repeat\n'
+                'return out'
+            )
+        else:
+            script = f'POSIX path of ({chooser})'
         
         try:
             result = subprocess.run(
@@ -167,6 +138,8 @@ class MeshViewer:
                 text=True,
                 check=True
             )
+            if allow_multiple:
+                return [path for path in result.stdout.splitlines() if path.strip()]
             return result.stdout.strip()
         except subprocess.CalledProcessError:
             return None  # User cancelled
@@ -188,21 +161,25 @@ class MeshViewer:
 
     def open_file_dialog(self):
         if platform.system() == 'Darwin':  # macOS
-            file_path = self.native_macos_open_dialog(DIALOG_TITLE_SELECT_MESH, MESH_FILE_TYPES)
+            file_paths = self.native_macos_open_dialog(
+                DIALOG_TITLE_SELECT_MESH,
+                MESH_FILE_TYPES,
+                allow_multiple=True,
+            )
         else:
             # Fallback to tkinter for other platforms
             import tkinter as tk
             from tkinter import filedialog
             root = tk.Tk()
             root.withdraw()
-            file_path = filedialog.askopenfilename(
+            file_paths = filedialog.askopenfilenames(
                 title=DIALOG_TITLE_SELECT_MESH,
                 filetypes=MESH_FILE_TYPES
             )
             root.destroy()
-        
-        if file_path:
-            self.load_mesh(file_path)
+
+        if file_paths:
+            self.load_mesh(file_paths)
     
     def capture_screenshot(self):
         """Capture the mesh area and save it."""
@@ -261,245 +238,85 @@ class MeshViewer:
             return COLOR_SCHEME_LIGHT
 
     def load_mesh(self, path):
+        if isinstance(path, (list, tuple)):
+            for item in path:
+                self.load_single_mesh(item)
+            self.layout_meshes()
+            return
         try:
-            mesh = load_mesh(path)
-            if mesh is None:
-                print("Mesh is None after loading. Check if the file is valid and supported.")
-                return
-            elif len(mesh.faces) == 0:
-                print("Loaded mesh has no faces. Please select a valid mesh file.")
-                return
-            elif len(mesh.vertices) == 0:
-                print("Loaded mesh has no vertices. Please select a valid mesh file.")
-                return
-            self.mesh = mesh
-
-            # mesh analysis and info extraction
-            self.mesh_info = MeshInfo(mesh)
-            
-            # Store intersected face IDs for rendering
-            self.intersected_face_ids = self.mesh_info.intersected_face_ids
-            
-            # Calculate diagonal and normal length for visualization
-            bounds = self.mesh_info.analysis["bounds"]
-            self.diag = np.linalg.norm(bounds[1] - bounds[0])
-            self.normal_length = max(self.diag * NORMAL_LENGTH_FACTOR, NORMAL_LENGTH_MIN)
-
-            # Sample points for point cloud visualization (if needed)
-            self.points: np.ndarray = None
-            self.point_normals: np.ndarray = None
-            self.points, face_idx = mesh.sample(POINT_CLOUD_SAMPLE_COUNT, return_index=True)
-            self.point_normals = mesh.face_normals[face_idx]
-            
-            self.update_gpu_buffers()
-
-            print(f"Loaded mesh: {path}")
-            print(self.mesh_info)
+            self.load_single_mesh(path)
+            self.layout_meshes()
             
         except Exception as e:
             print(f"Failed to load mesh: {e}")
+
+    def load_single_mesh(self, path:str):
+        mesh = load_mesh(path)
+        if mesh is None:
+            print("Mesh is None after loading. Check if the file is valid and supported.")
+            return
+        if len(mesh.faces) == 0:
+            print("Loaded mesh has no faces. Please select a valid mesh file.")
+            return
+        if len(mesh.vertices) == 0:
+            print("Loaded mesh has no vertices. Please select a valid mesh file.")
+            return
+        # mesh analysis and info extraction
+        name = os.path.basename(path).split('.')[0]
+        mesh_info = MeshInfo(mesh, name=name)
+
+        # Calculate diagonal and normal length for visualization
+        bounds = mesh_info.analysis["bounds"]
+        diag = np.linalg.norm(bounds[1] - bounds[0])
+        normal_length = max(diag * NORMAL_LENGTH_FACTOR, NORMAL_LENGTH_MIN)
+
+        # Sample points for point cloud visualization (if needed)
+        points, face_idx = mesh.sample(POINT_CLOUD_SAMPLE_COUNT, return_index=True)
+        point_normals = mesh.face_normals[face_idx]
+
+        mesh_buffer = MeshBuffer()
+        mesh_buffer.update_from_mesh(
+            mesh,
+            mesh_info,
+            normal_length,
+            points,
+            point_normals,
+            self.get_color_scheme(),
+        )
+        self.mesh_buffers.append(mesh_buffer)
+
+        print(f"Loaded mesh: {path}")
+        print(mesh_info)
+
+    def layout_meshes(self):
+        if not self.mesh_buffers:
+            return
+
+        count = len(self.mesh_buffers)
+        grid_cols = int(math.ceil(math.sqrt(count)))
+        grid_rows = int(math.ceil(count / grid_cols))
+
+        # Use original bounds for layout (unaffected by object scale)
+        max_extent = 0.0
+        for buffer in self.mesh_buffers:
+            if buffer.original_bounds_size is not None:
+                max_extent = max(max_extent, float(np.max(buffer.original_bounds_size)))
+
+        if max_extent <= 0.0:
+            max_extent = 1.0
+
+        # Scale spacing by object_scale so spacing adjusts proportionally with mesh size
+        spacing = max_extent * (1.0 + self.mesh_layout_padding) * self.object_scale
+
+        for index, buffer in enumerate(self.mesh_buffers):
+            row = index // grid_cols
+            col = index % grid_cols
+
+            grid_x = (col - (grid_cols - 1) * 0.5) * spacing
+            grid_z = (row - (grid_rows - 1) * 0.5) * spacing
+            center = buffer.original_bounds_center if buffer.original_bounds_center is not None else np.zeros(3, dtype=np.float32)
+            buffer.position = np.array([grid_x - center[0], -center[1], grid_z - center[2]], dtype=np.float32)
     
-    def update_gpu_buffers(self):
-        # Split faces into two groups
-        all_indices = np.arange(len(self.mesh.faces))
-        intersected_mask = np.array([i in self.intersected_face_ids for i in all_indices])
-        
-        # 1. Prepare Main Mesh (Not highlighted)
-        # main_faces = self.mesh.faces[~intersected_mask]
-        main_faces = self.mesh.faces
-        self.main_index_count = self.setup_buffer(self.main_vao, self.main_vbo, self.main_ebo, main_faces)
-
-        # 2. Prepare Intersected Faces (Selected)
-        intersected_faces = self.mesh.faces[intersected_mask]
-        self.intersected_index_count = self.setup_buffer(self.intersected_vao, self.intersected_vbo, self.intersected_ebo, intersected_faces)
-
-        # 3. Prepare Normals
-        self.face_normals_count = self.setup_face_normals_buffer()
-        self.vertex_normals_count = self.setup_vertex_normals_buffer()
-
-        # 4. Prepare Point Cloud
-        self.point_cloud_count, self.point_cloud_normals_count = self.setup_point_cloud_buffer()
-
-        # 5. Prepare Non-manifold Edges
-        self.nonmanifold_edges_count = self.setup_nonmanifold_edges_buffer()
-
-        # 6. Prepare Non-manifold Vertices
-        self.nonmanifold_vertices_count = self.setup_nonmanifold_vertices_buffer()
-
-    def setup_buffer(self, vao, vbo, ebo, faces):
-        if len(faces) == 0: return 0
-        
-        colors_scheme = self.get_color_scheme()
-        
-        # Un-index vertices so each triangle has unique data (easier for coloring/normals)
-        vertices = self.mesh.vertices[faces].reshape(-1, 3)
-        colors = np.full((vertices.shape[0], 3), colors_scheme['mesh'], dtype=np.float32)
-        
-        data = np.hstack((vertices, colors)).astype(np.float32)
-        indices = np.arange(len(vertices)).astype(np.uint32)
-
-        glBindVertexArray(vao)
-        glBindBuffer(GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
-        
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo)
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_DYNAMIC_DRAW)
-
-        # Layout: Pos(3), Color(3)
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
-        glEnableVertexAttribArray(1)
-        
-        return len(indices)
-
-    def setup_point_cloud_buffer(self):
-        colors_scheme = self.get_color_scheme()
-        points = self.points
-        colors = np.full((points.shape[0], 3), colors_scheme['point_cloud'], dtype=np.float32)
-        data = np.hstack((points, colors)).astype(np.float32)
-
-        glBindVertexArray(self.point_cloud_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.point_cloud_vbo)
-        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
-        glEnableVertexAttribArray(1)
-
-        # 4. Prepare Point Cloud Normals
-        normals = self.point_normals
-        line_verts = np.empty((points.shape[0] * 2, 3), dtype=np.float32)
-        line_verts[0::2] = points
-        line_verts[1::2] = points + normals * self.normal_length
-
-        colors = np.full((line_verts.shape[0], 3), colors_scheme['point_cloud_normals'], dtype=np.float32)
-        data = np.hstack((line_verts, colors)).astype(np.float32)
-
-        glBindVertexArray(self.point_cloud_normals_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.point_cloud_normals_vbo)
-        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
-        glEnableVertexAttribArray(1)
-
-        return points.shape[0], line_verts.shape[0]
-
-    def setup_face_normals_buffer(self):
-        colors_scheme = self.get_color_scheme()
-        length = self.normal_length
-
-        # Face centers and normals
-        centers = self.mesh.triangles_center
-        normals = self.mesh.face_normals
-
-        line_verts = np.empty((centers.shape[0] * 2, 3), dtype=np.float32)
-        line_verts[0::2] = centers
-        line_verts[1::2] = centers + normals * length
-
-        colors = np.full((line_verts.shape[0], 3), colors_scheme['face_normals'], dtype=np.float32)
-        data = np.hstack((line_verts, colors)).astype(np.float32)
-
-        glBindVertexArray(self.face_normals_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.face_normals_vbo)
-        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
-        glEnableVertexAttribArray(1)
-
-        return line_verts.shape[0]
-
-    def setup_vertex_normals_buffer(self):
-        colors_scheme = self.get_color_scheme()
-        length = self.normal_length
-
-        verts = self.mesh.vertices
-        normals = self.mesh.vertex_normals
-
-        line_verts = np.empty((verts.shape[0] * 2, 3), dtype=np.float32)
-        line_verts[0::2] = verts
-        line_verts[1::2] = verts + normals * length
-
-        colors = np.full((line_verts.shape[0], 3), colors_scheme['vertex_normals'], dtype=np.float32)
-        data = np.hstack((line_verts, colors)).astype(np.float32)
-
-        glBindVertexArray(self.vertex_normals_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.vertex_normals_vbo)
-        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
-        glEnableVertexAttribArray(1)
-
-        return line_verts.shape[0]
-
-    def setup_nonmanifold_edges_buffer(self):
-        """Setup buffer for non-manifold edges visualization."""
-        if not hasattr(self.mesh_info, 'nonmanifold_edges') or len(self.mesh_info.nonmanifold_edges) == 0:
-            return 0
-        
-        colors_scheme = self.get_color_scheme()
-        
-        # Get vertex positions for each non-manifold edge
-        nonmanifold_edges = self.mesh_info.nonmanifold_edges
-        verts = self.mesh.vertices
-        
-        # Create line vertices (start and end point for each edge)
-        line_verts = np.empty((nonmanifold_edges.shape[0] * 2, 3), dtype=np.float32)
-        line_verts[0::2] = verts[nonmanifold_edges[:, 0]]  # Start points
-        line_verts[1::2] = verts[nonmanifold_edges[:, 1]]  # End points
-        
-        colors = np.full((line_verts.shape[0], 3), colors_scheme['nonmanifold_edges'], dtype=np.float32)
-        data = np.hstack((line_verts, colors)).astype(np.float32)
-
-        glBindVertexArray(self.nonmanifold_edges_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.nonmanifold_edges_vbo)
-        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
-        glEnableVertexAttribArray(1)
-
-        return line_verts.shape[0]
-
-    def setup_nonmanifold_vertices_buffer(self):
-        """Setup buffer for non-manifold vertices visualization."""
-        if not hasattr(self.mesh_info, 'nonmanifold_vertices') or len(self.mesh_info.nonmanifold_vertices) == 0:
-            print(f"[DEBUG] No non-manifold vertices found")
-            return 0
-        
-        colors_scheme = self.get_color_scheme()
-        
-        # Get vertex positions for non-manifold vertices
-        nonmanifold_vertices = self.mesh_info.nonmanifold_vertices
-        verts = self.mesh.vertices
-        
-        print(f"[DEBUG] Setting up {len(nonmanifold_vertices)} non-manifold vertices for rendering")
-        
-        # Get positions of non-manifold vertices
-        vertex_positions = verts[nonmanifold_vertices]
-        
-        colors = np.full((vertex_positions.shape[0], 3), colors_scheme['nonmanifold_vertices'], dtype=np.float32)
-        data = np.hstack((vertex_positions, colors)).astype(np.float32)
-
-        glBindVertexArray(self.nonmanifold_vertices_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.nonmanifold_vertices_vbo)
-        glBufferData(GL_ARRAY_BUFFER, data.nbytes, data, GL_DYNAMIC_DRAW)
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(0))
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, VERTEX_STRIDE, ctypes.c_void_p(COLOR_OFFSET))
-        glEnableVertexAttribArray(1)
-
-        return vertex_positions.shape[0]
-
     def handle_input(self):
 
         # Handle 'I' for toggling intersected faces
@@ -561,7 +378,8 @@ class MeshViewer:
         if v_state == glfw.PRESS and self.last_v_state == glfw.RELEASE:
             self.show_nonmanifold_vertices = not self.show_nonmanifold_vertices
             status = "ON" if self.show_nonmanifold_vertices else "OFF"
-            print(f"Non-manifold vertices: {status} (count: {self.nonmanifold_vertices_count})")
+            total_vertices = sum(buffer.nonmanifold_vertices_count for buffer in self.mesh_buffers)
+            print(f"Non-manifold vertices: {status} (count: {total_vertices})")
         self.last_v_state = v_state
 
         # Handle 'O' for Open
@@ -580,11 +398,34 @@ class MeshViewer:
         u_state = glfw.get_key(self.window, glfw.KEY_U)
         if u_state == glfw.PRESS and self.last_u_state == glfw.RELEASE:
             self.color_theme = THEME_LIGHT if self.color_theme == THEME_DARK else THEME_DARK
-            if self.mesh is not None:
-                self.update_gpu_buffers()  # Recreate buffers with new colors
+            if self.mesh_buffers:
+                colors_scheme = self.get_color_scheme()
+                for buffer in self.mesh_buffers:
+                    buffer.refresh_colors(colors_scheme)
             theme_name = "Light" if self.color_theme == THEME_LIGHT else "Dark"
             print(f"Switched to {theme_name} theme")
         self.last_u_state = u_state
+
+        # Handle [ and ] for layout spacing
+        left_bracket_state = glfw.get_key(self.window, glfw.KEY_LEFT_BRACKET)
+        if left_bracket_state == glfw.PRESS and self.last_left_bracket_state == glfw.RELEASE:
+            self.mesh_layout_padding = max(
+                MESH_LAYOUT_PADDING_MIN,
+                self.mesh_layout_padding - MESH_LAYOUT_PADDING_STEP,
+            )
+            self.layout_meshes()
+            print(f"Mesh spacing: {self.mesh_layout_padding:.2f}")
+        self.last_left_bracket_state = left_bracket_state
+
+        right_bracket_state = glfw.get_key(self.window, glfw.KEY_RIGHT_BRACKET)
+        if right_bracket_state == glfw.PRESS and self.last_right_bracket_state == glfw.RELEASE:
+            self.mesh_layout_padding = min(
+                MESH_LAYOUT_PADDING_MAX,
+                self.mesh_layout_padding + MESH_LAYOUT_PADDING_STEP,
+            )
+            self.layout_meshes()
+            print(f"Mesh spacing: {self.mesh_layout_padding:.2f}")
+        self.last_right_bracket_state = right_bracket_state
 
         # Handle SPACE for toggling camera rotation
         space_state = glfw.get_key(self.window, glfw.KEY_SPACE)
@@ -660,95 +501,97 @@ class MeshViewer:
         cam_z = math.cos(angle) * horizontal_distance
         cam_y = self.camera_height
         view = Matrix44.look_at([cam_x, cam_y, cam_z], [0, 0, 0], [0, 1, 0])
-        model = (
-            Matrix44.from_x_rotation(self.object_rotation_x)
-            * Matrix44.from_y_rotation(self.object_rotation_y)
-            * Matrix44.from_z_rotation(self.object_rotation_z)
-            * Matrix44.from_scale([self.object_scale, self.object_scale, self.object_scale])
-        )
         
-        mvp = proj * view * model
-        glUniformMatrix4fv(self.mvp_loc, 1, GL_FALSE, mvp)
+        for buffer in self.mesh_buffers:
+            model = (
+                Matrix44.from_translation(buffer.position)
+                * Matrix44.from_x_rotation(self.object_rotation_x)
+                * Matrix44.from_y_rotation(self.object_rotation_y)
+                * Matrix44.from_z_rotation(self.object_rotation_z)
+                * Matrix44.from_scale([self.object_scale, self.object_scale, self.object_scale])
+            )
+            mvp = proj * view * model
+            glUniformMatrix4fv(self.mvp_loc, 1, GL_FALSE, mvp)
 
-        # --- DRAW PASS 1: Main Mesh ---
-        if self.main_index_count > 0:
-            glBindVertexArray(self.main_vao)
-            glUniform1i(self.use_override_loc, False)
-            
-            if self.mode == MODE_SOLID or self.mode == MODE_BOTH:
-                # Add offset to push solid faces away from lines/highlighter
+            # --- DRAW PASS 1: Main Mesh ---
+            if buffer.main_index_count > 0:
+                glBindVertexArray(buffer.main_vao)
+                glUniform1i(self.use_override_loc, False)
+
+                if self.mode == MODE_SOLID or self.mode == MODE_BOTH:
+                    # Add offset to push solid faces away from lines/highlighter
+                    glEnable(GL_POLYGON_OFFSET_FILL)
+                    glPolygonOffset(POLYGON_OFFSET_FACTOR, POLYGON_OFFSET_UNITS)
+                    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+                    glDrawElements(GL_TRIANGLES, buffer.main_index_count, GL_UNSIGNED_INT, None)
+                    glDisable(GL_POLYGON_OFFSET_FILL)
+
+                if self.mode == MODE_WIREFRAME or self.mode == MODE_BOTH:
+                    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+                    glUniform1i(self.use_override_loc, True)
+                    glUniform3f(self.override_loc, *colors_scheme['wireframe'])
+                    glDrawElements(GL_TRIANGLES, buffer.main_index_count, GL_UNSIGNED_INT, None)
+
+            # --- DRAW PASS 2: Highlighted Part ---
+            if self.show_intersected and buffer.intersected_index_count > 0:
+                glBindVertexArray(buffer.intersected_vao)
+
+                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+                glUniform1i(self.use_override_loc, True)
+                glUniform3f(self.override_loc, *colors_scheme['intersected'])
+
                 glEnable(GL_POLYGON_OFFSET_FILL)
                 glPolygonOffset(POLYGON_OFFSET_FACTOR, POLYGON_OFFSET_UNITS)
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
-                glDrawElements(GL_TRIANGLES, self.main_index_count, GL_UNSIGNED_INT, None)
+                glDrawElements(GL_TRIANGLES, buffer.intersected_index_count, GL_UNSIGNED_INT, None)
                 glDisable(GL_POLYGON_OFFSET_FILL)
-            
-            if self.mode == MODE_WIREFRAME or self.mode == MODE_BOTH:
+
+                # 2. Wireframe Outline for Highlight
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-                glUniform1i(self.use_override_loc, True)
-                glUniform3f(self.override_loc, *colors_scheme['wireframe'])
-                glDrawElements(GL_TRIANGLES, self.main_index_count, GL_UNSIGNED_INT, None)
+                glUniform1i(self.use_override_loc, True)  # Keep override on for outline color
+                glUniform3f(self.override_loc, *colors_scheme['wireframe_highlight'])
+                glDrawElements(GL_TRIANGLES, buffer.intersected_index_count, GL_UNSIGNED_INT, None)
 
-        # --- DRAW PASS 2: Highlighted Part ---
-        if self.show_intersected and self.intersected_index_count > 0:
-            glBindVertexArray(self.intersected_vao)
-                
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
-            glUniform1i(self.use_override_loc, True)
-            glUniform3f(self.override_loc, *colors_scheme['intersected'])
-            
-            glEnable(GL_POLYGON_OFFSET_FILL)
-            glPolygonOffset(POLYGON_OFFSET_FACTOR, POLYGON_OFFSET_UNITS)
-            glDrawElements(GL_TRIANGLES, self.intersected_index_count, GL_UNSIGNED_INT, None)
-            glDisable(GL_POLYGON_OFFSET_FILL)
-
-            # 2. Wireframe Outline for Highlight
+            # --- DRAW PASS 3: Normals ---
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-            glUniform1i(self.use_override_loc, True) # Keep override on for outline color
-            glUniform3f(self.override_loc, *colors_scheme['wireframe_highlight'])
-            glDrawElements(GL_TRIANGLES, self.intersected_index_count, GL_UNSIGNED_INT, None)
-        
-        # --- DRAW PASS 3: Normals ---
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-        glUniform1i(self.use_override_loc, True)
+            glUniform1i(self.use_override_loc, True)
 
-        if self.show_face_normals and self.face_normals_count > 0:
-            glBindVertexArray(self.face_normals_vao)
-            glUniform3f(self.override_loc, *colors_scheme['face_normals'])
-            glDrawArrays(GL_LINES, 0, self.face_normals_count)
+            if self.show_face_normals and buffer.face_normals_count > 0:
+                glBindVertexArray(buffer.face_normals_vao)
+                glUniform3f(self.override_loc, *colors_scheme['face_normals'])
+                glDrawArrays(GL_LINES, 0, buffer.face_normals_count)
 
-        if self.show_vertex_normals and self.vertex_normals_count > 0:
-            glBindVertexArray(self.vertex_normals_vao)
-            glUniform3f(self.override_loc, *colors_scheme['vertex_normals'])
-            glDrawArrays(GL_LINES, 0, self.vertex_normals_count)
-        
-        if self.show_point_cloud and self.point_cloud_count > 0:
-            glBindVertexArray(self.point_cloud_vao)
-            glUniform3f(self.override_loc, *colors_scheme['point_cloud'])
-            glUniform1f(self.point_size_loc, POINT_CLOUD_POINT_SIZE)
-            glDrawArrays(GL_POINTS, 0, self.point_cloud_count)
+            if self.show_vertex_normals and buffer.vertex_normals_count > 0:
+                glBindVertexArray(buffer.vertex_normals_vao)
+                glUniform3f(self.override_loc, *colors_scheme['vertex_normals'])
+                glDrawArrays(GL_LINES, 0, buffer.vertex_normals_count)
 
-        if self.show_point_cloud_normals and self.point_cloud_normals_count > 0:
-            glBindVertexArray(self.point_cloud_normals_vao)
-            glUniform3f(self.override_loc, *colors_scheme['point_cloud_normals'])
-            glDrawArrays(GL_LINES, 0, self.point_cloud_normals_count)
+            if self.show_point_cloud and buffer.point_cloud_count > 0:
+                glBindVertexArray(buffer.point_cloud_vao)
+                glUniform3f(self.override_loc, *colors_scheme['point_cloud'])
+                glUniform1f(self.point_size_loc, POINT_CLOUD_POINT_SIZE)
+                glDrawArrays(GL_POINTS, 0, buffer.point_cloud_count)
 
-        if self.show_nonmanifold_edges and self.nonmanifold_edges_count > 0:
-            # Render non-manifold edges on top without depth testing
-            glDisable(GL_DEPTH_TEST)
-            glBindVertexArray(self.nonmanifold_edges_vao)
-            glUniform3f(self.override_loc, *colors_scheme['nonmanifold_edges'])
-            glDrawArrays(GL_LINES, 0, self.nonmanifold_edges_count)
-            glEnable(GL_DEPTH_TEST)
+            if self.show_point_cloud_normals and buffer.point_cloud_normals_count > 0:
+                glBindVertexArray(buffer.point_cloud_normals_vao)
+                glUniform3f(self.override_loc, *colors_scheme['point_cloud_normals'])
+                glDrawArrays(GL_LINES, 0, buffer.point_cloud_normals_count)
 
-        if self.show_nonmanifold_vertices and self.nonmanifold_vertices_count > 0:
-            # Render non-manifold vertices as points on top
-            glDisable(GL_DEPTH_TEST)
-            glBindVertexArray(self.nonmanifold_vertices_vao)
-            glUniform3f(self.override_loc, *colors_scheme['nonmanifold_vertices'])
-            glUniform1f(self.point_size_loc, NONMANIFOLD_VERTEX_POINT_SIZE)
-            glDrawArrays(GL_POINTS, 0, self.nonmanifold_vertices_count)
-            glEnable(GL_DEPTH_TEST)
+            if self.show_nonmanifold_edges and buffer.nonmanifold_edges_count > 0:
+                # Render non-manifold edges on top without depth testing
+                glDisable(GL_DEPTH_TEST)
+                glBindVertexArray(buffer.nonmanifold_edges_vao)
+                glUniform3f(self.override_loc, *colors_scheme['nonmanifold_edges'])
+                glDrawArrays(GL_LINES, 0, buffer.nonmanifold_edges_count)
+                glEnable(GL_DEPTH_TEST)
+
+            if self.show_nonmanifold_vertices and buffer.nonmanifold_vertices_count > 0:
+                # Render non-manifold vertices as points on top
+                glDisable(GL_DEPTH_TEST)
+                glBindVertexArray(buffer.nonmanifold_vertices_vao)
+                glUniform3f(self.override_loc, *colors_scheme['nonmanifold_vertices'])
+                glUniform1f(self.point_size_loc, NONMANIFOLD_VERTEX_POINT_SIZE)
+                glDrawArrays(GL_POINTS, 0, buffer.nonmanifold_vertices_count)
+                glEnable(GL_DEPTH_TEST)
 
     def run(self):
         while not glfw.window_should_close(self.window):
@@ -758,7 +601,7 @@ class MeshViewer:
             glClearColor(*colors_scheme['background'])
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             
-            if self.mesh is not None:
+            if self.mesh_buffers:
                 self.render_mesh()
 
             glfw.swap_buffers(self.window)
