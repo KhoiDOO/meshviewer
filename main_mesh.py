@@ -8,12 +8,12 @@ import numpy as np
 from pyrr import Matrix44
 import math
 
-import subprocess
-import platform
 from PIL import Image
 
-from mesh import load_mesh, MeshInfo
-from mesh_buffer import MeshBuffer
+from utils.io import load_mesh
+from utils.fdialog import open_file_dialog as show_open_file_dialog, save_file_dialog as show_save_file_dialog
+from analysis.mesh import MeshInfo
+from buffer.mesh_buffer import MeshBuffer
 
 from constants import *
 
@@ -102,81 +102,12 @@ class MeshViewer:
         self.use_override_loc = glGetUniformLocation(self.shader, "useOverride")
         self.point_size_loc = glGetUniformLocation(self.shader, "pointSize")
 
-    def native_macos_open_dialog(self, title, file_types, allow_multiple=False):
-        """Show native macOS file open dialog using osascript."""
-        # Build file type filter for macOS
-        extensions = []
-        for label, pattern in file_types:
-            if label != "All Files":
-                # Extract extensions like *.obj -> obj
-                exts = [ext.replace('*', '').replace('.', '') for ext in pattern.split()]
-                extensions.extend(exts)
-        
-        if extensions:
-            type_filter = ','.join(f'"{ext}"' for ext in extensions)
-            chooser = f'choose file with prompt "{title}" of type {{{type_filter}}} without invisibles'
-        else:
-            chooser = f'choose file with prompt "{title}" without invisibles'
-
-        if allow_multiple:
-            chooser = f'{chooser} with multiple selections allowed'
-            script = (
-                'set theFiles to ' + chooser + '\n'
-                'set out to ""\n'
-                'repeat with f in theFiles\n'
-                'set out to out & (POSIX path of f) & linefeed\n'
-                'end repeat\n'
-                'return out'
-            )
-        else:
-            script = f'POSIX path of ({chooser})'
-        
-        try:
-            result = subprocess.run(
-                ['osascript', '-e', script],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            if allow_multiple:
-                return [path for path in result.stdout.splitlines() if path.strip()]
-            return result.stdout.strip()
-        except subprocess.CalledProcessError:
-            return None  # User cancelled
-    
-    def native_macos_save_dialog(self, title, default_extension, file_types):
-        """Show native macOS file save dialog using osascript."""
-        script = f'POSIX path of (choose file name with prompt "{title}" default name "screenshot{default_extension}")'
-        
-        try:
-            result = subprocess.run(
-                ['osascript', '-e', script],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            return result.stdout.strip()
-        except subprocess.CalledProcessError:
-            return None  # User cancelled
-
     def open_file_dialog(self):
-        if platform.system() == 'Darwin':  # macOS
-            file_paths = self.native_macos_open_dialog(
-                DIALOG_TITLE_SELECT_MESH,
-                MESH_FILE_TYPES,
-                allow_multiple=True,
-            )
-        else:
-            # Fallback to tkinter for other platforms
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()
-            file_paths = filedialog.askopenfilenames(
-                title=DIALOG_TITLE_SELECT_MESH,
-                filetypes=MESH_FILE_TYPES
-            )
-            root.destroy()
+        file_paths = show_open_file_dialog(
+            DIALOG_TITLE_SELECT_MESH,
+            MESH_FILE_TYPES,
+            allow_multiple=True,
+        )
 
         if file_paths:
             self.load_mesh(file_paths)
@@ -199,25 +130,12 @@ class MeshViewer:
         if bbox:
             img = img.crop(bbox)
         
-        # Open save dialog
-        if platform.system() == 'Darwin':  # macOS
-            file_path = self.native_macos_save_dialog(
-                DIALOG_TITLE_SAVE_SCREENSHOT,
-                SCREENSHOT_DEFAULT_EXTENSION,
-                SCREENSHOT_FILE_TYPES
-            )
-        else:
-            # Fallback to tkinter for other platforms
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()
-            file_path = filedialog.asksaveasfilename(
-                title=DIALOG_TITLE_SAVE_SCREENSHOT,
-                defaultextension=SCREENSHOT_DEFAULT_EXTENSION,
-                filetypes=SCREENSHOT_FILE_TYPES
-            )
-            root.destroy()
+        file_path = show_save_file_dialog(
+            DIALOG_TITLE_SAVE_SCREENSHOT,
+            SCREENSHOT_DEFAULT_EXTENSION,
+            SCREENSHOT_FILE_TYPES,
+            default_name="screenshot",
+        )
         
         if file_path:
             try:

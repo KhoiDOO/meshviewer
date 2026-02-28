@@ -7,7 +7,7 @@ from OpenGL.GL import *
 
 from constants import COLOR_OFFSET, VERTEX_STRIDE
 
-from mesh import MeshInfo
+from analysis.mesh import MeshInfo
 
 
 class MeshBuffer:

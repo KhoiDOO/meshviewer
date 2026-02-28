@@ -2,10 +2,10 @@ import trimesh
 import numpy as np
 import fcl
 from colorama import Fore, Style, init
+from . import format_value, format_bool
 
 from constants import (
     COPLANAR_TOLERANCE,
-    NORMALIZE_BOUND,
     MANIFOLD_EDGE_COUNT,
     FORMAT_LABEL_WIDTH,
     FORMAT_PRECISION_FLOAT,
@@ -20,27 +20,6 @@ def is_manifold(mesh: trimesh.Trimesh) -> bool:
     unique_edges, counts = np.unique(edges_sorted, axis=0, return_counts=True)
     is_manifold = np.all(counts == MANIFOLD_EDGE_COUNT).item()
     return is_manifold
-
-def normalize_vertices(vertices: np.ndarray, bound=NORMALIZE_BOUND) -> np.ndarray:
-    vmin = vertices.min(0)
-    vmax = vertices.max(0)
-    ori_center = (vmax + vmin) / 2
-    ori_scale = 2 * bound / np.max(vmax - vmin)
-    vertices = (vertices - ori_center) * ori_scale
-    return vertices
-
-def load_mesh(file_path):
-    mesh: trimesh.Trimesh = trimesh.load(file_path, process=False)
-    if isinstance(mesh, trimesh.Scene):
-        mesh = mesh.dump(concatenate=True)
-    vertices = mesh.vertices
-    faces = mesh.faces
-
-    vertices = normalize_vertices(vertices)
-
-    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
-
-    return mesh
 
 def get_intersected_tria_ids(mesh: trimesh.Trimesh):
     # 1. Build the FCL Model
@@ -231,26 +210,9 @@ class MeshInfo:
         }
     
     def __str__(self):
-        def format_bool(value):
-            """Format boolean values with color."""
-            if value is True:
-                return f"{Fore.GREEN}True{Style.RESET_ALL}"
-            elif value is False:
-                return f"{Fore.RED}False{Style.RESET_ALL}"
-            return str(value)
-        
-        def format_value(value):
-            """Format values with appropriate color based on type."""
-            if isinstance(value, bool):
-                return format_bool(value)
-            elif isinstance(value, (int, float)):
-                return f"{Fore.YELLOW}{value:,}{Style.RESET_ALL}" if isinstance(value, int) else f"{Fore.YELLOW}{value:.{FORMAT_PRECISION_FLOAT}f}{Style.RESET_ALL}"
-            else:
-                return f"{Fore.WHITE}{value}{Style.RESET_ALL}"
-        
         info_str = f"{Fore.CYAN}{Style.BRIGHT}╔═══ Mesh Information [{self.name}] ═══╗{Style.RESET_ALL}\n"
         
-        # Statistics - group #vertices, #faces, #edges on same row
+        # Statistics
         info_str += f"\n{Fore.MAGENTA}{Style.BRIGHT}Statistics:{Style.RESET_ALL}\n"
         info_str += f"  {Fore.CYAN}{'#vertices / #faces / #edges':.<{FORMAT_LABEL_WIDTH}}{Style.RESET_ALL}"
         info_str += f" {format_value(self.stats['#vertices'])} / {format_value(self.stats['#faces'])} / {format_value(self.stats['#edges'])}\n"

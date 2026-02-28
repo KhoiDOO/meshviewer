@@ -147,6 +147,11 @@ MESH_FILE_TYPES = [
     ("All Files", "*.*")
 ]
 
+POINT_CLOUD_FILE_TYPES = [
+    ("Point Cloud Files", "*.ply *.xyz *.txt"),
+    ("All Files", "*.*")
+]
+
 SCREENSHOT_FILE_TYPES = [
     ("PNG", "*.png"),
     ("JPEG", "*.jpg"),
@@ -159,6 +164,7 @@ SCREENSHOT_DEFAULT_EXTENSION = ".png"
 # Dialog Titles
 DIALOG_TITLE_SELECT_MESH = "Select Mesh File"
 DIALOG_TITLE_SAVE_SCREENSHOT = "Save Screenshot"
+DIALOG_TITLE_SELECT_POINT_CLOUD = "Select Point Cloud File"
 
 # Mesh Analysis Constants
 COPLANAR_TOLERANCE = 1e-8  # Tolerance for coplanar vertex detection
